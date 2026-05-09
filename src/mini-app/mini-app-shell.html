@@ -116,12 +116,38 @@
     }
     .empty-state .sub { font-size: 14px; margin-top: 8px; opacity: 0.9; }
     .filter-card {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
       background: var(--card);
       border-radius: var(--radius);
       padding: 14px 16px;
       margin-bottom: 10px;
       border: 1px solid #3a3a3c;
     }
+    .filter-card-media-slot {
+      width: 44px;
+      height: 44px;
+      flex-shrink: 0;
+      border-radius: 10px;
+      overflow: hidden;
+      background: #3a3a3c;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .filter-card-lottie {
+      width: 44px;
+      height: 44px;
+      display: block;
+    }
+    .filter-card-thumb {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .filter-card-body { flex: 1; min-width: 0; }
     .filter-card .title { font-weight: 600; margin-bottom: 6px; font-size: 16px; }
     .filter-card .meta { font-size: 13px; color: var(--muted); line-height: 1.45; }
     .dock {
@@ -260,6 +286,22 @@
       height: 28px;
       display: block;
       flex-shrink: 0;
+    }
+    .picker-media-slot {
+      width: 36px;
+      height: 36px;
+      flex-shrink: 0;
+      border-radius: 8px;
+      overflow: hidden;
+      background: #3a3a3c;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .picker-lottie {
+      width: 36px;
+      height: 36px;
+      display: block;
     }
     .pick-icon-ph {
       display: block;
@@ -676,14 +718,26 @@
       .join('');
   }
 
-  function giftFragmentLottieCandidates(collectionTitle) {
+  /**
+   * `form`: serial from «номер подарка» then `{Slug}-1` (selected chips).
+   * `picker`: only `{Slug}-1` while browsing lists — avoids wrong serial on other gifts.
+   */
+  function giftFragmentLottieCandidates(collectionTitle, mode, serialOverride) {
+    mode = mode || 'form';
     var slug = fragmentPascalSlug(collectionTitle);
     if (!slug) return [];
     var urls = [];
-    var serialRaw = document.getElementById('inp-serial').value.trim();
-    var serial = serialRaw === '' ? NaN : parseInt(serialRaw, 10);
-    if (Number.isFinite(serial) && serial > 0) {
-      urls.push(FRAGMENT_GIFT_LOTTIE + '/' + slug + '-' + serial + '.lottie.json');
+    if (mode === 'form') {
+      var serial = NaN;
+      if (serialOverride != null && Number.isFinite(serialOverride) && serialOverride > 0) {
+        serial = serialOverride;
+      } else {
+        var serialRaw = document.getElementById('inp-serial').value.trim();
+        serial = serialRaw === '' ? NaN : parseInt(serialRaw, 10);
+      }
+      if (Number.isFinite(serial) && serial > 0) {
+        urls.push(FRAGMENT_GIFT_LOTTIE + '/' + slug + '-' + serial + '.lottie.json');
+      }
     }
     urls.push(FRAGMENT_GIFT_LOTTIE + '/' + slug + '-1.lottie.json');
     var seen = {};
@@ -694,40 +748,51 @@
     });
   }
 
-  function appendStickerOrPh(slot, stickerUrl) {
+  function appendStickerOrPh(slot, stickerUrl, imgClass, bigPlaceholder) {
+    imgClass = imgClass || 'pick-inline-thumb';
     slot.innerHTML = '';
     if (stickerUrl) {
       var img = document.createElement('img');
-      img.className = 'pick-inline-thumb';
+      img.className = imgClass;
       img.src = stickerUrl;
       img.alt = '';
       img.loading = 'lazy';
       img.onerror = function () {
         slot.innerHTML = '';
-        var ph = document.createElement('span');
-        ph.className = 'pick-icon-ph';
+        var ph = document.createElement(bigPlaceholder ? 'div' : 'span');
+        ph.className = bigPlaceholder ? 'picker-icon' : 'pick-icon-ph';
         slot.appendChild(ph);
       };
       slot.appendChild(img);
       return;
     }
-    var ph = document.createElement('span');
-    ph.className = 'pick-icon-ph';
+    var ph = document.createElement(bigPlaceholder ? 'div' : 'span');
+    ph.className = bigPlaceholder ? 'picker-icon' : 'pick-icon-ph';
     slot.appendChild(ph);
   }
 
-  /** Prefer Fragment Lottie (Telegram gift animation); fall back to MRKT sticker WebP. */
-  function fillPickSlotLottieThenSticker(slot, collectionTitle, stickerUrl) {
+  /**
+   * Prefer Fragment Lottie; fall back to MRKT WebP.
+   * @param {'form'|'picker'} mode
+   * @param {string} playerCls e.g. pick-inline-lottie | picker-lottie | filter-card-lottie
+   * @param {string} imgCls e.g. pick-inline-thumb | picker-thumb | filter-card-thumb
+   * @param {number|null|undefined} serialOverride saved filter serial (form mode); omit to use «номер подарка» input
+   */
+  function fillPickSlotLottieThenSticker(slot, collectionTitle, stickerUrl, mode, playerCls, imgCls, serialOverride) {
+    mode = mode || 'form';
+    playerCls = playerCls || 'pick-inline-lottie';
+    imgCls = imgCls || 'pick-inline-thumb';
+    var bigPlaceholder = imgCls === 'picker-thumb' || imgCls === 'filter-card-thumb';
     slot.innerHTML = '';
-    var urls = giftFragmentLottieCandidates(collectionTitle);
+    var urls = giftFragmentLottieCandidates(collectionTitle, mode, serialOverride);
     if (!urls.length || typeof customElements === 'undefined' || !customElements.get('lottie-player')) {
-      appendStickerOrPh(slot, stickerUrl);
+      appendStickerOrPh(slot, stickerUrl, imgCls, bigPlaceholder);
       return;
     }
     var idx = 0;
     function cleanupAndSticker() {
       slot.innerHTML = '';
-      appendStickerOrPh(slot, stickerUrl);
+      appendStickerOrPh(slot, stickerUrl, imgCls, bigPlaceholder);
     }
     function tryNext() {
       if (idx >= urls.length) {
@@ -742,7 +807,7 @@
       player.setAttribute('loop', '');
       player.setAttribute('autoplay', '');
       player.setAttribute('mode', 'normal');
-      player.className = 'pick-inline-lottie';
+      player.className = playerCls;
       var done = false;
       var t = setTimeout(function () {
         if (done) return;
@@ -792,7 +857,14 @@
       return;
     }
     label.textContent = pickedGift;
-    fillPickSlotLottieThenSticker(slot, pickedGift, pickedGiftStickerUrl || '');
+    fillPickSlotLottieThenSticker(
+      slot,
+      pickedGift,
+      pickedGiftStickerUrl || '',
+      'form',
+      'pick-inline-lottie',
+      'pick-inline-thumb',
+    );
   }
 
   function syncModelPickDisplay() {
@@ -808,10 +880,52 @@
     }
     label.textContent = pickedModel;
     if (pickedGift) {
-      fillPickSlotLottieThenSticker(slot, pickedGift, pickedModelStickerUrl || '');
+      fillPickSlotLottieThenSticker(
+        slot,
+        pickedGift,
+        pickedModelStickerUrl || '',
+        'form',
+        'pick-inline-lottie',
+        'pick-inline-thumb',
+      );
     } else {
-      appendStickerOrPh(slot, pickedModelStickerUrl || '');
+      appendStickerOrPh(slot, pickedModelStickerUrl || '', 'pick-inline-thumb', false);
     }
+  }
+
+  var pickerLottieObserver = null;
+
+  function observePickerLottieRows(listEl) {
+    if (pickerLottieObserver) pickerLottieObserver.disconnect();
+    if (!listEl) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      listEl.querySelectorAll('.picker-media-slot[data-pending="1"]').forEach(function (slot) {
+        var coll = slot.getAttribute('data-collection') || '';
+        var sticker = slot.getAttribute('data-sticker') || '';
+        slot.removeAttribute('data-pending');
+        fillPickSlotLottieThenSticker(slot, coll, sticker, 'picker', 'picker-lottie', 'picker-thumb');
+      });
+      return;
+    }
+    pickerLottieObserver = new IntersectionObserver(
+      function (entries) {
+        entries.forEach(function (en) {
+          if (!en.isIntersecting) return;
+          var row = en.target;
+          pickerLottieObserver.unobserve(row);
+          var slot = row.querySelector('.picker-media-slot[data-pending="1"]');
+          if (!slot) return;
+          var coll = slot.getAttribute('data-collection') || '';
+          var sticker = slot.getAttribute('data-sticker') || '';
+          slot.removeAttribute('data-pending');
+          fillPickSlotLottieThenSticker(slot, coll, sticker, 'picker', 'picker-lottie', 'picker-thumb');
+        });
+      },
+      { root: listEl, rootMargin: '100px', threshold: 0.01 },
+    );
+    listEl.querySelectorAll('.picker-item').forEach(function (row) {
+      pickerLottieObserver.observe(row);
+    });
   }
 
   function updatePickClear() {
@@ -878,6 +992,33 @@
     });
   }
 
+  function stickerUrlForCollection(title) {
+    if (!title || !giftCatalog.length) return '';
+    for (var i = 0; i < giftCatalog.length; i++) {
+      if ((giftCatalog[i].collectionTitle || '') === title) return giftCatalog[i].stickerUrl || '';
+    }
+    return '';
+  }
+
+  function hydrateFilterCardLotties() {
+    document.querySelectorAll('.filter-card-media-slot').forEach(function (slot) {
+      var coll = slot.getAttribute('data-collection') || '';
+      var sticker = slot.getAttribute('data-sticker') || '';
+      var sr = slot.getAttribute('data-serial');
+      var serialOverride = sr === '' || sr == null ? null : parseInt(sr, 10);
+      if (!Number.isFinite(serialOverride) || serialOverride <= 0) serialOverride = null;
+      fillPickSlotLottieThenSticker(
+        slot,
+        coll,
+        sticker,
+        'form',
+        'filter-card-lottie',
+        'filter-card-thumb',
+        serialOverride,
+      );
+    });
+  }
+
   function formatFilterSummary(c) {
     var parts = [];
     if (c.collectionsInclude && c.collectionsInclude.length)
@@ -922,12 +1063,38 @@
       wrap.innerHTML =
         '<div class="empty-state" id="filters-empty" style="display:none">Ничего не найдено<div class="sub">Измените запрос в поиске</div></div>' +
         rows.map(function (f) {
-          var summ = formatFilterSummary(f.criteria || {});
+          var c = f.criteria || {};
+          var summ = formatFilterSummary(c);
           var searchBlob = (f.name || '') + ' ' + summ;
-          return '<div class="filter-card" data-search="' + escapeHtml(searchBlob).replace(/"/g,'&quot;') + '">' +
-            '<div class="title">' + escapeHtml(f.name) + '</div>' +
-            '<div class="meta">' + escapeHtml(summ) + '</div></div>';
+          var coll =
+            (c.collectionsInclude && c.collectionsInclude.length && c.collectionsInclude[0]) || '';
+          var sticker = stickerUrlForCollection(coll);
+          var ser = c.giftSerial;
+          var serAttr =
+            ser != null && Number.isFinite(Number(ser)) && Number(ser) > 0
+              ? String(parseInt(String(ser), 10))
+              : '';
+          return (
+            '<div class="filter-card" data-search="' +
+            escapeHtml(searchBlob).replace(/"/g, '&quot;') +
+            '">' +
+            '<div class="filter-card-media-slot" data-collection="' +
+            escapeAttr(coll) +
+            '" data-sticker="' +
+            escapeAttr(sticker) +
+            '" data-serial="' +
+            escapeAttr(serAttr) +
+            '"></div>' +
+            '<div class="filter-card-body">' +
+            '<div class="title">' +
+            escapeHtml(f.name) +
+            '</div>' +
+            '<div class="meta">' +
+            escapeHtml(summ) +
+            '</div></div></div>'
+          );
         }).join('');
+      hydrateFilterCardLotties();
       applyDockSearch();
     }).catch(function () { errEl.textContent = 'Не удалось загрузить'; });
   }
@@ -947,18 +1114,32 @@
   function renderGiftList(q) {
     var ql = (q || '').toLowerCase();
     var list = document.getElementById('gift-list');
+    if (pickerLottieObserver) pickerLottieObserver.disconnect();
     var rows = giftCatalog.filter(function (g) {
       var t = (g.collectionTitle || '').toLowerCase();
       return !ql || t.indexOf(ql) >= 0;
     });
-    list.innerHTML = rows.map(function (g) {
+    list.innerHTML = '';
+    rows.forEach(function (g) {
       var title = g.collectionTitle || '';
-      var thumb = g.stickerUrl
-        ? '<img class="picker-thumb" src="' + escapeAttr(g.stickerUrl) + '" alt="" loading="lazy" />'
-        : '<div class="picker-icon"></div>';
-      return '<div class="picker-item" data-name="' + escapeHtml(title).replace(/"/g,'&quot;') + '">' +
-        thumb + '<span>' + escapeHtml(title) + '</span></div>';
-    }).join('');
+      var row = document.createElement('div');
+      row.className = 'picker-item';
+      row.setAttribute('data-name', title);
+      var slot = document.createElement('div');
+      slot.className = 'picker-media-slot';
+      slot.setAttribute('data-pending', '1');
+      slot.setAttribute('data-collection', title);
+      slot.setAttribute('data-sticker', g.stickerUrl || '');
+      var ph = document.createElement('div');
+      ph.className = 'picker-icon';
+      slot.appendChild(ph);
+      row.appendChild(slot);
+      var lab = document.createElement('span');
+      lab.textContent = title;
+      row.appendChild(lab);
+      list.appendChild(row);
+    });
+    observePickerLottieRows(list);
     list.querySelectorAll('.picker-item').forEach(function (el) {
       el.onclick = function () {
         var title = el.getAttribute('data-name') || '';
@@ -981,21 +1162,36 @@
   function renderModelList(q) {
     var ql = (q || '').toLowerCase();
     var list = document.getElementById('model-list');
+    if (pickerLottieObserver) pickerLottieObserver.disconnect();
     var rows = modelRows.filter(function (m) {
       var name = (m.modelName || '').toLowerCase();
       var tail = m.rarityPercent != null ? String(m.rarityPercent) + '%' : '';
       var blob = name + ' ' + tail;
       return !ql || blob.indexOf(ql) >= 0;
     });
-    list.innerHTML = rows.map(function (m) {
+    var coll = pickedGift || '';
+    list.innerHTML = '';
+    rows.forEach(function (m) {
       var label = m.modelName;
       if (m.rarityPercent != null) label += ' (' + m.rarityPercent + '%)';
-      var thumb = m.stickerUrl
-        ? '<img class="picker-thumb" src="' + escapeAttr(m.stickerUrl) + '" alt="" loading="lazy" />'
-        : '<div class="picker-icon"></div>';
-      return '<div class="picker-item" data-model="' + escapeHtml(m.modelName).replace(/"/g,'&quot;') + '">' +
-        thumb + '<span>' + escapeHtml(label) + '</span></div>';
-    }).join('');
+      var row = document.createElement('div');
+      row.className = 'picker-item';
+      row.setAttribute('data-model', m.modelName || '');
+      var slot = document.createElement('div');
+      slot.className = 'picker-media-slot';
+      slot.setAttribute('data-pending', '1');
+      slot.setAttribute('data-collection', coll);
+      slot.setAttribute('data-sticker', m.stickerUrl || '');
+      var ph = document.createElement('div');
+      ph.className = 'picker-icon';
+      slot.appendChild(ph);
+      row.appendChild(slot);
+      var lab = document.createElement('span');
+      lab.textContent = label;
+      row.appendChild(lab);
+      list.appendChild(row);
+    });
+    observePickerLottieRows(list);
     list.querySelectorAll('.picker-item').forEach(function (el) {
       el.onclick = function () {
         var name = el.getAttribute('data-model') || '';
@@ -1155,8 +1351,9 @@
   };
 
   loadMe();
-  loadFilters();
-  loadGiftCatalog();
+  loadGiftCatalog(function () {
+    loadFilters();
+  });
 })();
   </script>
 </body>
