@@ -48,7 +48,8 @@ services:
       redis:
         condition: service_healthy
     ports:
-      - "${APP_PORT:-3000}:3000"
+      # Default 3010 avoids clashing with another service on host :3000 (common on dev boxes).
+      - "${APP_PORT:-3010}:3000"
     networks:
       - internal
 
