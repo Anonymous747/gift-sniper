@@ -8,11 +8,13 @@
 # How `.env` gets on the server:
 #   A) Manual (default): SSH once, `cp .env.example .env`, edit secrets. Every later deploy keeps that file.
 #   B) From GitHub (optional): set secret SERVER_DOTENV_B64 to the base64 of your full `.env` file.
-#      Each deploy uploads it to `$DEPLOY_PATH/.env` before `docker compose up` (overwrites).
+#      Each deploy uploads it to `/opt/gift-sniper/.env` before `docker compose up` (overwrites).
 #      Encode locally: `base64 < .env | tr -d '\n'`
 #
+# Fixed deploy directory on the server: /opt/gift-sniper (clone this repo there once).
+#
 # GitHub repo secrets (Settings → Secrets and variables → Actions):
-#   SSH_HOST, SSH_USER, SSH_PRIVATE_KEY, DEPLOY_PATH
+#   SSH_HOST, SSH_USER, SSH_PRIVATE_KEY
 #   SERVER_DOTENV_B64 — optional; full .env file as one-line base64 (see above)
 #
 name: CI / CD
@@ -28,6 +30,8 @@ permissions:
 
 env:
   IMAGE_NAME: gift-sniper
+  # Clone this repository exactly here on the server (e.g. `git clone … /opt/gift-sniper`).
+  DEPLOY_PATH: /opt/gift-sniper
 
 jobs:
   build:
@@ -83,7 +87,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: .env
-          target: ${{ secrets.DEPLOY_PATH }}/
+          target: ${{ env.DEPLOY_PATH }}/
 
       - name: Remove local .env artifact
         if: always()
@@ -98,12 +102,7 @@ jobs:
           script_stop: true
           script: |
             set -euo pipefail
-            DEPLOY_PATH="${{ secrets.DEPLOY_PATH }}"
-            if [ -z "$DEPLOY_PATH" ]; then
-              echo "DEPLOY_PATH secret is not set"
-              exit 1
-            fi
-            cd "$DEPLOY_PATH"
+            cd "${{ env.DEPLOY_PATH }}"
             git fetch origin main
             git checkout main
             git reset --hard origin/main
