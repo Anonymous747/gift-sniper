@@ -1,4 +1,4 @@
-import { Controller, Get, Headers } from '@nestjs/common';
+import { Controller, Get, Header, Headers } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { validateTelegramWebAppInitData } from '../lib/telegram-webapp';
@@ -13,6 +13,7 @@ export class MiniAppController {
   ) {}
 
   @Get()
+  @Header('Content-Type', 'text/html; charset=utf-8')
   shell(): string {
     const base = (this.config.get<string>('PUBLIC_APP_BASE_URL') ?? '').replace(/\/$/, '');
     const apiPrefix = base ? `${base}` : '';

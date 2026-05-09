@@ -6,11 +6,16 @@ import { BotService } from './bot/bot.service';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  const publicOrigin = process.env.PUBLIC_APP_BASE_URL?.trim().replace(/\/$/, '');
+  const corsOrigins: (string | RegExp)[] = [
+    /^https:\/\/(web\.)?telegram\.org$/,
+    /^https:\/\/[a-z0-9-]+\.telegram\.org$/,
+  ];
+  if (publicOrigin?.startsWith('https://')) {
+    corsOrigins.push(publicOrigin);
+  }
   app.enableCors({
-    origin: [
-      /^https:\/\/(web\.)?telegram\.org$/,
-      /^https:\/\/[a-z0-9-]+\.telegram\.org$/,
-    ],
+    origin: corsOrigins,
     methods: ['GET', 'HEAD', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'X-Telegram-Init-Data'],
   });
