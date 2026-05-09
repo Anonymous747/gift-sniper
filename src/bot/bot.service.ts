@@ -6,9 +6,10 @@ import { UserTier } from '@prisma/client';
 import type { FilterCriteria } from '../filters/filter-criteria';
 
 @Injectable()
-export class BotService implements OnModuleInit, OnModuleDestroy {
+export class BotService implements OnModuleDestroy, OnModuleInit {
   private readonly logger = new Logger(BotService.name);
   private bot: Bot | null = null;
+  private longPollingStarted = false;
 
   constructor(
     private readonly config: ConfigService,
@@ -24,9 +25,12 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     }
     const bot = new Bot(token);
     try {
-      // Sets botInfo on the instance; avoids relying only on start()’s deferred init.
       await bot.init();
       this.logger.log(`Telegram token OK — bot @${bot.botInfo.username} (id=${bot.botInfo.id})`);
+      const wh = await bot.api.getWebhookInfo();
+      this.logger.log(
+        `Telegram webhook: url=${wh.url?.length ? wh.url : '(none)'}, pending_updates=${wh.pending_update_count ?? 0}`,
+      );
     } catch (err) {
       this.logger.error(
         `Telegram init/getMe failed (invalid token, revoked bot, or blocked egress to api.telegram.org): ${
@@ -38,7 +42,15 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     const botUsername = bot.botInfo.username ?? '';
     this.bot = bot;
     this.registerHandlers(botUsername);
-    // Never await bot.start(): it runs getUpdates forever and would block Nest bootstrap (HTTP + other hooks).
+  }
+
+  /**
+   * Starts grammY long polling. Call from `main.ts` **after** `app.listen()` so HTTP
+   * (e.g. /health) is reachable before getUpdates competes with any stale deploy.
+   */
+  startLongPolling(): void {
+    if (!this.bot || this.longPollingStarted) return;
+    this.longPollingStarted = true;
     void this.bot
       .start({
         drop_pending_updates: this.config.get<string>('TELEGRAM_DROP_PENDING_UPDATES') === '1',
@@ -74,9 +86,25 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * `bot.command('start')` only sees `message` / `channel_post`, not `business_message`.
-   * Telegram Business chats deliver `/start` as business_message — match by text instead.
+   * Plain `/start` text from the raw update. Covers every message-like branch Telegram uses
+   * (private, business, edited, channel) — more reliable than `bot.command` / filter-only paths.
    */
+  private textFromRawUpdate(ctx: Context): string | undefined {
+    const u = ctx.update;
+    const cq = u.callback_query?.message;
+    const cqText =
+      cq && 'text' in cq && typeof cq.text === 'string' ? cq.text : undefined;
+    return (
+      u.message?.text ??
+      u.edited_message?.text ??
+      u.channel_post?.text ??
+      u.edited_channel_post?.text ??
+      u.business_message?.text ??
+      u.edited_business_message?.text ??
+      cqText
+    );
+  }
+
   private matchStartCommandText(text: string, botUsername: string): boolean {
     let t = text.replace(/^\uFEFF/, '').replace(/[\u200B-\u200D\uFEFF]/g, '');
     t = t.trimStart();
@@ -87,84 +115,39 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     return m != null && m[1].toLowerCase() === botUsername.toLowerCase();
   }
 
-  /** Uses `ctx.msg` so business / edited / channel mirrors are covered, not only `ctx.message`. */
-  private isStartCommandUpdate(ctx: Context, botUsername: string): boolean {
-    const msg = ctx.msg;
-    const text = msg && 'text' in msg ? msg.text : undefined;
-    if (text == null) return false;
-    return this.matchStartCommandText(text, botUsername);
-  }
-
   private registerHandlers(botUsername: string) {
     if (!this.bot) return;
+
+    this.bot.catch((err) => {
+      const e = err.error;
+      if (e instanceof GrammyError) {
+        this.logger.error(`GrammyError: ${e.description}`);
+      } else if (e instanceof HttpError) {
+        this.logger.error(`HttpError: ${e}`);
+      } else {
+        this.logger.error(`Bot error: ${e instanceof Error ? e.stack ?? e.message : String(e)}`);
+      }
+    });
 
     if (this.config.get<string>('LOG_TELEGRAM_UPDATES') === '1') {
       this.bot.use(async (ctx, next) => {
         const u = ctx.update;
         const keys = Object.keys(u).filter((k) => k !== 'update_id');
-        this.logger.log(`TG update ${u.update_id}: ${keys.join(',')}`);
+        const preview = this.textFromRawUpdate(ctx);
+        this.logger.log(
+          `TG update ${u.update_id}: ${keys.join(',')}${preview != null ? ` text=${JSON.stringify(preview.slice(0, 80))}` : ''}`,
+        );
         await next();
       });
     }
 
-    this.bot.filter((ctx) => this.isStartCommandUpdate(ctx, botUsername)).use(async (ctx) => {
-      const from = ctx.from;
-      if (!from) {
-        await this.safeReply(ctx, 'Open this bot from a private chat (tap “Start” or “Open” here).');
+    this.bot.use(async (ctx, next) => {
+      const text = this.textFromRawUpdate(ctx);
+      if (text != null && this.matchStartCommandText(text, botUsername)) {
+        await this.handleStart(ctx);
         return;
       }
-      const tid = String(from.id);
-      try {
-        await this.prisma.user.upsert({
-          where: { telegramId: tid },
-          create: {
-            telegramId: tid,
-            username: from.username ?? null,
-            tier: UserTier.free,
-            filters: {
-              create: {
-                name: 'Default',
-                alertsEnabled: true,
-                criteria: {
-                  markets: ['mrkt'],
-                  belowFloorPercentMin: 5,
-                } satisfies FilterCriteria,
-              },
-            },
-          },
-          update: { username: from.username ?? undefined },
-        });
-        const user = await this.prisma.user.findUnique({
-          where: { telegramId: tid },
-          include: { filters: true },
-        });
-        if (user && user.filters.length === 0) {
-          await this.prisma.userFilter.create({
-            data: {
-              userId: user.id,
-              name: 'Default',
-              alertsEnabled: true,
-              criteria: {
-                markets: ['mrkt'],
-                belowFloorPercentMin: 5,
-              } satisfies FilterCriteria,
-            },
-          });
-        }
-        await this.safeReply(
-          ctx,
-          'Gift Sniper is live.\n\n' +
-            'Default alert: MRKT listings ≥5% below floor.\n' +
-            'Use /filter below <percent> [minTon] [maxTon] to tune.\n' +
-            '/status — your tier & filters',
-        );
-      } catch (err) {
-        this.logger.error(`/start handler failed: ${err instanceof Error ? err.stack ?? err.message : err}`);
-        await this.safeReply(
-          ctx,
-          'Could not register you (database error). Check server logs and DATABASE_URL / migrations.',
-        );
-      }
+      await next();
     });
 
     this.bot.command('help', async (ctx) => {
@@ -216,7 +199,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     this.bot.command('filter', async (ctx) => {
       const from = ctx.from;
       if (!from) return;
-      const text = ctx.message?.text ?? '';
+      const text = this.textFromRawUpdate(ctx) ?? '';
       const args = text.split(/\s+/).slice(1);
       if (args[0]?.toLowerCase() !== 'below' || args[1] == null) {
         await ctx.reply('Usage: /filter below <percent> [minTon] [maxTon]');
@@ -256,17 +239,66 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       }
       await ctx.reply(`Updated filter: ${JSON.stringify(criteria)}`);
     });
+  }
 
-    this.bot.catch((err) => {
-      const e = err.error;
-      if (e instanceof GrammyError) {
-        this.logger.error(`GrammyError: ${e.description}`);
-      } else if (e instanceof HttpError) {
-        this.logger.error(`HttpError: ${e}`);
-      } else {
-        this.logger.error(`Bot error: ${e instanceof Error ? e.stack ?? e.message : String(e)}`);
+  private async handleStart(ctx: Context): Promise<void> {
+    const from = ctx.from;
+    if (!from) {
+      await this.safeReply(ctx, 'Open this bot from a private chat (tap “Start” or “Open” here).');
+      return;
+    }
+    const tid = String(from.id);
+    try {
+      await this.prisma.user.upsert({
+        where: { telegramId: tid },
+        create: {
+          telegramId: tid,
+          username: from.username ?? null,
+          tier: UserTier.free,
+          filters: {
+            create: {
+              name: 'Default',
+              alertsEnabled: true,
+              criteria: {
+                markets: ['mrkt'],
+                belowFloorPercentMin: 5,
+              } satisfies FilterCriteria,
+            },
+          },
+        },
+        update: { username: from.username ?? undefined },
+      });
+      const user = await this.prisma.user.findUnique({
+        where: { telegramId: tid },
+        include: { filters: true },
+      });
+      if (user && user.filters.length === 0) {
+        await this.prisma.userFilter.create({
+          data: {
+            userId: user.id,
+            name: 'Default',
+            alertsEnabled: true,
+            criteria: {
+              markets: ['mrkt'],
+              belowFloorPercentMin: 5,
+            } satisfies FilterCriteria,
+          },
+        });
       }
-    });
+      await this.safeReply(
+        ctx,
+        'Gift Sniper is live.\n\n' +
+          'Default alert: MRKT listings ≥5% below floor.\n' +
+          'Use /filter below <percent> [minTon] [maxTon] to tune.\n' +
+          '/status — your tier & filters',
+      );
+    } catch (err) {
+      this.logger.error(`/start handler failed: ${err instanceof Error ? err.stack ?? err.message : err}`);
+      await this.safeReply(
+        ctx,
+        'Could not register you (database error). Check server logs and DATABASE_URL / migrations.',
+      );
+    }
   }
 
   private async safeReply(ctx: Context, text: string): Promise<void> {
