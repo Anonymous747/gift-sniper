@@ -105,15 +105,32 @@ jobs:
           script: |
             set -euo pipefail
             cd "${{ env.DEPLOY_PATH }}"
+            echo "==> Git: fetch + reset to origin/main"
             git fetch origin main
             git checkout main
             git reset --hard origin/main
+            echo "==> .env"
             if [ -f .env ]; then
-              echo "Using .env on server (from prior manual setup or from SERVER_DOTENV_B64 upload in this workflow)."
+              echo "Using existing .env"
             else
-              echo "No .env yet — creating from .env.example (set secrets in this file on the server, or use SERVER_DOTENV_B64)."
+              test -f .env.example || { echo "ERROR: .env.example missing in repo checkout"; exit 1; }
               cp .env.example .env
+              echo "Created .env from .env.example (configure secrets on server or use SERVER_DOTENV_B64)"
             fi
-            docker compose pull postgres redis 2>/dev/null || true
-            docker compose up -d --build
-            docker compose ps
+            echo "==> Docker Compose"
+            if docker compose version >/dev/null 2>&1; then
+              dcompose() { docker compose "$@"; }
+            elif command -v docker-compose >/dev/null 2>&1; then
+              dcompose() { docker-compose "$@"; }
+            else
+              echo "ERROR: neither 'docker compose' nor 'docker-compose' is available."
+              exit 1
+            fi
+            dcompose version
+            dcompose pull postgres redis 2>/dev/null || true
+            if ! dcompose up -d --build; then
+              echo "ERROR: docker compose up --build failed. Recent service logs:"
+              dcompose logs --tail=120 2>/dev/null || true
+              exit 1
+            fi
+            dcompose ps
