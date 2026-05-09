@@ -40,20 +40,6 @@ function normalizeMrktSlug(raw: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
-/** `Xmas Stocking` → `XmasStocking` (Telegram collectible URL segment prefix). */
-function pascalConcatCollectionLabel(label: string): string {
-  const cleaned = label.replace(/^[•·\s]+|[•·\s]+$/g, '').trim();
-  const parts = cleaned.split(/[\s/_·•|-]+/).filter(Boolean);
-  if (parts.length === 0) return '';
-  return parts
-    .map((part) => {
-      const alphaNum = part.replace(/[^a-zA-Z0-9]/g, '');
-      if (!alphaNum) return '';
-      return alphaNum.charAt(0).toUpperCase() + alphaNum.slice(1).toLowerCase();
-    })
-    .join('');
-}
-
 /**
  * One run in a Telegram `t.me/nft/{Key}-{serial}` path (no hyphens in Key).
  * MRKT often sends camelCase (`topHat`) or lowercase (`tophat`); Telegram expects PascalCase (`TopHat`).
@@ -103,34 +89,23 @@ function parseNftTelegramSuffix(raw: string): string | null {
 }
 
 /**
- * Telegram collectible gift link (opens gift card in Telegram), e.g.
- * https://t.me/nft/XmasStocking-219810
+ * Telegram collectible gift link (`https://t.me/nft/…`).
+ *
+ * Telegram validates the path with `STARGIFT_SLUG_INVALID` unless the slug matches their
+ * canonical Fragment / StarGift id. MRKT `gift_id` and human collection names often look
+ * similar (`Obsidian-2822`) but are **not** guaranteed to match Telegram’s slug, so we only
+ * emit `t.me/nft` when MRKT supplies an explicit telegram suffix field.
  */
 export function telegramNftCollectibleUrl(event: NftLinkEvent): string | null {
   if (event.market !== 'mrkt' || !event.gift_id?.trim()) return null;
 
   const suffixRaw = event.nft_telegram_suffix?.trim();
-  if (suffixRaw) {
-    const parsed = parseNftTelegramSuffix(suffixRaw);
-    if (parsed && nftSuffixSerialMatchesSegment(parsed, event.serial_number)) {
-      return `https://t.me/nft/${parsed}`;
-    }
-  }
+  if (!suffixRaw) return null;
 
-  const id = event.gift_id.trim();
-  if (NFT_PATH_SEGMENT.test(id)) {
-    return `https://t.me/nft/${normalizeTelegramNftPathSegment(id)}`;
-  }
+  const parsed = parseNftTelegramSuffix(suffixRaw);
+  if (!parsed || !nftSuffixSerialMatchesSegment(parsed, event.serial_number)) return null;
 
-  if (event.serial_number != null) {
-    const label = (event.collection_display ?? event.collection).trim();
-    const seg = pascalConcatCollectionLabel(label);
-    if (seg.length > 0) {
-      return `https://t.me/nft/${seg}-${event.serial_number}`;
-    }
-  }
-
-  return null;
+  return `https://t.me/nft/${parsed}`;
 }
 
 /**
@@ -156,7 +131,7 @@ export function mrktTelegramGiftUrl(event: MrktLinkEvent): string | null {
   return `https://t.me/mrkt/app?startapp=${encodeURIComponent(startapp)}`;
 }
 
-/** Prefer Telegram collectible `t.me/nft/…`; fall back to MRKT mini-app link. */
+/** Prefer authoritative Telegram collectible URL; otherwise MRKT mini-app (always valid for MRKT listings). */
 export function giftTelegramDisplayUrl(event: NftLinkEvent): string | null {
   return telegramNftCollectibleUrl(event) ?? mrktTelegramGiftUrl(event as MrktLinkEvent);
 }

@@ -54,6 +54,10 @@ export function mapMrktGiftToExternalListing(raw: Record<string, unknown>): Exte
     'nft_slug',
     'telegramCollectibleSlug',
     'telegram_collectible_slug',
+    'starGiftSlug',
+    'star_gift_slug',
+    'stargiftSlug',
+    'stargift_slug',
   );
   const number = pickNum(raw, 'number', 'Number');
   const title = pickStr(raw, 'title', 'Title', 'name', 'Name');
