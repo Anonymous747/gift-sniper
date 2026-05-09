@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Bot, GrammyError, HttpError } from 'grammy';
+import { Bot, type Context, GrammyError, HttpError } from 'grammy';
 import { PrismaService } from '../prisma/prisma.service';
 import { UserTier } from '@prisma/client';
 import type { FilterCriteria } from '../filters/filter-criteria';
@@ -23,8 +23,10 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       return;
     }
     const bot = new Bot(token);
+    let botUsername = '';
     try {
       const me = await bot.api.getMe();
+      botUsername = me.username ?? '';
       this.logger.log(`Telegram token OK — bot @${me.username} (id=${me.id})`);
     } catch (err) {
       this.logger.error(
@@ -35,7 +37,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       return;
     }
     this.bot = bot;
-    this.registerHandlers();
+    this.registerHandlers(botUsername);
     // Never await bot.start(): it runs getUpdates forever and would block Nest bootstrap (HTTP + other hooks).
     void this.bot
       .start({
@@ -70,10 +72,30 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     await this.bot.api.sendMessage(telegramId, text, { parse_mode: undefined });
   }
 
-  private registerHandlers() {
+  /**
+   * `bot.command('start')` only sees `message` / `channel_post`, not `business_message`.
+   * Telegram Business chats deliver `/start` as business_message — match by text instead.
+   */
+  private matchStartCommandText(text: string, botUsername: string): boolean {
+    const t = text.trimStart();
+    if (t === '/start' || t.startsWith('/start ')) return true;
+    if (!botUsername) return false;
+    const m = t.match(/^\/start@([A-Za-z0-9_]+)(\s|$)/);
+    return m != null && m[1].toLowerCase() === botUsername.toLowerCase();
+  }
+
+  private isStartCommandUpdate(ctx: Context, botUsername: string): boolean {
+    const msg =
+      ctx.message ?? ctx.businessMessage ?? ctx.editedBusinessMessage ?? ctx.editedMessage;
+    const text = msg && 'text' in msg ? msg.text : undefined;
+    if (text == null) return false;
+    return this.matchStartCommandText(text, botUsername);
+  }
+
+  private registerHandlers(botUsername: string) {
     if (!this.bot) return;
 
-    this.bot.command('start', async (ctx) => {
+    this.bot.filter((ctx) => this.isStartCommandUpdate(ctx, botUsername)).use(async (ctx) => {
       const from = ctx.from;
       if (!from) {
         await ctx.reply('Open this bot from a private chat (tap “Start” or “Open” here).').catch(() => undefined);
