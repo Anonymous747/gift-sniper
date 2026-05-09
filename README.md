@@ -203,6 +203,8 @@ Workflow: `.github/workflows/ci-cd.yml`.
 
 Secrets: `SSH_HOST`, `SSH_USER`, `SSH_PRIVATE_KEY`, optional `SERVER_DOTENV_B64`.
 
+**SSH note:** If `root` login was disabled on the droplet, connect as **`deploy`** with the same key that used to work for root (see `scripts/revert-ssh-hardening-as-root.sh` to allow root again via the cloud console). IDE “All configured authentication methods failed” usually means **wrong user** (`root` instead of `deploy`) or **wrong `IdentityFile`** in `~/.ssh/config`.
+
 ---
 
 ## Operations
@@ -211,6 +213,7 @@ Secrets: `SSH_HOST`, `SSH_USER`, `SSH_PRIVATE_KEY`, optional `SERVER_DOTENV_B64`
 - **Metrics:** `GET /metrics` (Prometheus text), `GET /metrics/json` (snapshot counters & latency summaries).
 - **Admin (optional):** set `ADMIN_TOKEN` in `.env`, then `GET /admin/stats` or `POST /admin/replay` with header `X-Admin-Token: <ADMIN_TOKEN>`. Replay body: `{ "max": 50 }` (replays newest entries from the Redis stream through ingestion; safe with existing `eventUuid` dedupe).
 - **Realtime:** Socket.IO server (default namespace) emits `listing` payloads `{ event, sniperScore, ingestedAt }` after each successful listing persist.
+- **Mini App host (`game.*`):** TLS + nginx are not managed by this repo. After DNS points at the server, run **`sudo bash /opt/gift-sniper/scripts/bootstrap-game-subdomain-as-root.sh`** once as **root** (cloud console). That installs a limited sudo rule for `deploy` and runs **`scripts/provision-game-subdomain.sh`** (nginx + Let’s Encrypt for `game.foryou.quest` → `127.0.0.1:3010`). To undo earlier SSH lockdown only (restore **`PermitRootLogin yes`**, drop **`deploy-provision-game`** sudoers): **`scripts/revert-ssh-hardening-as-root.sh`** as root.
 - **Logs (Compose):** `npm run docker:logs` or `docker compose logs -f app`.
 - **Common production issues:** Empty `TELEGRAM_BOT_TOKEN` in server `.env`; another process long-polling the same token (409 / no updates); Redis DI requires **`redis.constants.ts`** import path (do not import `REDIS_CLIENT` only from `redis.module.ts` alongside `RedisService` — circular).
 
