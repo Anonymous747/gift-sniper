@@ -5,6 +5,7 @@ import type Redis from 'ioredis';
 import { REDIS_CLIENT } from '../redis/redis.constants';
 import { EventStreamService } from '../events/event-stream.service';
 import { IngestionService } from '../ingestion/ingestion.service';
+import { MetricsService } from '../metrics/metrics.service';
 
 @Injectable()
 export class StreamConsumerService implements OnApplicationBootstrap, OnModuleDestroy {
@@ -16,6 +17,7 @@ export class StreamConsumerService implements OnApplicationBootstrap, OnModuleDe
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
     private readonly streams: EventStreamService,
     private readonly ingestion: IngestionService,
+    private readonly metrics: MetricsService,
     config: ConfigService,
   ) {
     this.consumerName = `api-${process.pid}`;
@@ -73,10 +75,13 @@ export class StreamConsumerService implements OnApplicationBootstrap, OnModuleDe
       return;
     }
     const raw = fields[payloadIdx + 1];
+    const t0 = Date.now();
     try {
       const parsed = JSON.parse(raw) as unknown;
       await this.ingestion.handleNormalizedEvent(parsed);
+      this.metrics.recordIngest(Date.now() - t0, true);
     } catch (err) {
+      this.metrics.recordIngest(Date.now() - t0, false);
       this.logger.warn(`Bad stream payload: ${err instanceof Error ? err.message : err}`);
     } finally {
       await this.redis.xack(key, group, id);

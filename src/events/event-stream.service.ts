@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import type Redis from 'ioredis';
 import { Inject } from '@nestjs/common';
 import { REDIS_CLIENT } from '../redis/redis.constants';
+import { MetricsService } from '../metrics/metrics.service';
 import type { NormalizedMarketEvent } from './normalized-event';
 
 const CONSUMER_GROUP = 'gift-pipeline';
@@ -15,6 +16,7 @@ export class EventStreamService {
   constructor(
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
     config: ConfigService,
+    private readonly metrics: MetricsService,
   ) {
     this.streamKey = config.getOrThrow<string>('EVENT_STREAM_KEY');
   }
@@ -41,12 +43,14 @@ export class EventStreamService {
   }
 
   async publish(event: NormalizedMarketEvent): Promise<string> {
+    const t0 = Date.now();
     const id = await this.redis.xadd(
       this.streamKey,
       '*',
       'payload',
       JSON.stringify(event),
     );
+    this.metrics.recordPublish(Date.now() - t0);
     return id as string;
   }
 }

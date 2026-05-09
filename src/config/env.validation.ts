@@ -82,6 +82,29 @@ class EnvironmentVariables {
   @Min(1)
   @Max(65535)
   APP_PORT?: number;
+
+  /** Protects `GET /admin/stats` and `POST /admin/replay` (header `X-Admin-Token`). */
+  @IsOptional()
+  @IsString()
+  ADMIN_TOKEN?: string;
+
+  /** When `1`, skip Telegram alerts from ingestion (collector fast-path only). */
+  @IsOptional()
+  @IsString()
+  ALERTS_FROM_FAST_PATH_ONLY?: string;
+
+  /** Set to `0` to disable collector-side alerts (stream → ingestion path only). Default: fast path on. */
+  @IsOptional()
+  @IsString()
+  FAST_ALERT_FROM_COLLECTOR?: string;
+
+  @IsOptional()
+  @IsString()
+  TONNEL_ENABLED?: string;
+
+  @IsOptional()
+  @IsString()
+  PORTALS_ENABLED?: string;
 }
 
 export function validateEnv(config: Record<string, unknown>) {

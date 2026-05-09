@@ -26,6 +26,16 @@ export interface NormalizedMarketEvent {
   timestamp: number;
   velocity?: string | null;
   liquidity_score?: string | null;
+  /** SHA256 prefix over stable listing fields — relists / analytics / replay bookkeeping. */
+  content_fingerprint?: string;
+  /** True when `analyzeSerial` marks a “viral” pattern (extra Telegram line). */
+  beautiful_serial?: boolean;
+  /** e.g. `palindrome+low_id` */
+  beautiful_label?: string | null;
+  /** 0–10 placeholder for collection heat; future collectors can set. */
+  collection_demand_score?: number | null;
+  /** 0–12 placeholder for smart-money / whale proximity; future pipeline can set. */
+  whale_activity_score?: number | null;
 }
 
 export function assertNormalizedEvent(raw: unknown): NormalizedMarketEvent {

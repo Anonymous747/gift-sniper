@@ -4,16 +4,23 @@ import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { PrismaService } from '../prisma/prisma.service';
 import { assertNormalizedEvent, type NormalizedMarketEvent } from '../events/normalized-event';
 import { computeSniperScore } from '../events/sniper-score';
+import { ConfigService } from '@nestjs/config';
 import { AlertsService } from '../alerts/alerts.service';
+import { AppEventBus } from '../realtime/app-event-bus';
 
 @Injectable()
 export class IngestionService {
   private readonly logger = new Logger(IngestionService.name);
+  private readonly alertsFromFastPathOnly: boolean;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly alerts: AlertsService,
-  ) {}
+    private readonly bus: AppEventBus,
+    config: ConfigService,
+  ) {
+    this.alertsFromFastPathOnly = config.get<string>('ALERTS_FROM_FAST_PATH_ONLY') === '1';
+  }
 
   async handleNormalizedEvent(raw: unknown): Promise<void> {
     const event = assertNormalizedEvent(raw);
@@ -149,8 +156,11 @@ export class IngestionService {
       throw err;
     }
 
-    await this.alerts.notifyMatchingUsers(event, sniperScore).catch((err) => {
-      this.logger.error(`Alert dispatch failed: ${err instanceof Error ? err.message : err}`);
-    });
+    if (!this.alertsFromFastPathOnly) {
+      await this.alerts.notifyMatchingUsers(event, sniperScore).catch((err) => {
+        this.logger.error(`Alert dispatch failed: ${err instanceof Error ? err.message : err}`);
+      });
+    }
+    this.bus.emit('listing', { event, sniperScore, ingestedAt: Date.now() });
   }
 }
