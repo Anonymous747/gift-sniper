@@ -110,12 +110,25 @@ jobs:
             git checkout main
             git reset --hard origin/main
             echo "==> .env"
-            if [ -f .env ]; then
-              echo "Using existing .env"
+            echo "cwd=$(pwd) user=$(id -un) uid=$(id -u)"
+            ls -la .env .env.example 2>&1 || true
+            if [ ! -w . ]; then
+              echo "ERROR: ${{ env.DEPLOY_PATH }} is not writable by $(id -un). Example fix: sudo chown -R \"$(id -un)\" \"${{ env.DEPLOY_PATH }}\""
+              exit 1
+            fi
+            if [ -f .env ] && [ -s .env ]; then
+              echo "Using existing non-empty .env"
+            elif [ -f .env.example ]; then
+              rm -f .env
+              if ! cp .env.example .env; then
+                echo "ERROR: cp .env.example .env failed (permissions or read-only FS). See ls above."
+                exit 1
+              fi
+              chmod 600 .env 2>/dev/null || true
+              echo "Created .env from .env.example (set secrets on server or use SERVER_DOTENV_B64)"
             else
-              test -f .env.example || { echo "ERROR: .env.example missing in repo checkout"; exit 1; }
-              cp .env.example .env
-              echo "Created .env from .env.example (configure secrets on server or use SERVER_DOTENV_B64)"
+              echo "ERROR: .env.example missing in repo after reset (unexpected)."
+              exit 1
             fi
             echo "==> Docker Compose"
             if docker compose version >/dev/null 2>&1; then
