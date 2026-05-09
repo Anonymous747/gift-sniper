@@ -16,15 +16,27 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit() {
-    const token = this.config.get<string>('TELEGRAM_BOT_TOKEN');
+    const raw = this.config.get<string>('TELEGRAM_BOT_TOKEN');
+    const token = raw?.trim();
     if (!token) {
       this.logger.warn('TELEGRAM_BOT_TOKEN not set; bot disabled');
       return;
     }
     this.bot = new Bot(token);
     this.registerHandlers();
-    await this.bot.start();
-    this.logger.log('Telegram bot started');
+    // Never await bot.start(): it runs getUpdates forever and would block Nest bootstrap (HTTP + other hooks).
+    void this.bot
+      .start({
+        onStart: (info) =>
+          this.logger.log(`Telegram bot @${info.username} long-polling (deleteWebhook + getUpdates)`),
+      })
+      .catch((err) => {
+        this.logger.error(
+          `Telegram bot failed to start (check token, webhook conflict, network): ${
+            err instanceof Error ? err.stack ?? err.message : String(err)
+          }`,
+        );
+      });
   }
 
   async onModuleDestroy() {
@@ -48,14 +60,34 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       const from = ctx.from;
       if (!from) return;
       const tid = String(from.id);
-      await this.prisma.user.upsert({
-        where: { telegramId: tid },
-        create: {
-          telegramId: tid,
-          username: from.username ?? null,
-          tier: UserTier.free,
-          filters: {
-            create: {
+      try {
+        await this.prisma.user.upsert({
+          where: { telegramId: tid },
+          create: {
+            telegramId: tid,
+            username: from.username ?? null,
+            tier: UserTier.free,
+            filters: {
+              create: {
+                name: 'Default',
+                alertsEnabled: true,
+                criteria: {
+                  markets: ['mrkt'],
+                  belowFloorPercentMin: 5,
+                } satisfies FilterCriteria,
+              },
+            },
+          },
+          update: { username: from.username ?? undefined },
+        });
+        const user = await this.prisma.user.findUnique({
+          where: { telegramId: tid },
+          include: { filters: true },
+        });
+        if (user && user.filters.length === 0) {
+          await this.prisma.userFilter.create({
+            data: {
+              userId: user.id,
               name: 'Default',
               alertsEnabled: true,
               criteria: {
@@ -63,33 +95,20 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
                 belowFloorPercentMin: 5,
               } satisfies FilterCriteria,
             },
-          },
-        },
-        update: { username: from.username ?? undefined },
-      });
-      const user = await this.prisma.user.findUnique({
-        where: { telegramId: tid },
-        include: { filters: true },
-      });
-      if (user && user.filters.length === 0) {
-        await this.prisma.userFilter.create({
-          data: {
-            userId: user.id,
-            name: 'Default',
-            alertsEnabled: true,
-            criteria: {
-              markets: ['mrkt'],
-              belowFloorPercentMin: 5,
-            } satisfies FilterCriteria,
-          },
-        });
+          });
+        }
+        await ctx.reply(
+          'Gift Sniper is live.\n\n' +
+            'Default alert: MRKT listings ≥5% below floor.\n' +
+            'Use /filter below <percent> [minTon] [maxTon] to tune.\n' +
+            '/status — your tier & filters',
+        );
+      } catch (err) {
+        this.logger.error(`/start handler failed: ${err instanceof Error ? err.stack ?? err.message : err}`);
+        await ctx.reply(
+          'Could not register you (database error). Check server logs and DATABASE_URL / migrations.',
+        );
       }
-      await ctx.reply(
-        'Gift Sniper is live.\n\n' +
-          'Default alert: MRKT listings ≥5% below floor.\n' +
-          'Use /filter below <percent> [minTon] [maxTon] to tune.\n' +
-          '/status — your tier & filters',
-      );
     });
 
     this.bot.command('help', async (ctx) => {
@@ -189,7 +208,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       } else if (e instanceof HttpError) {
         this.logger.error(`HttpError: ${e}`);
       } else {
-        this.logger.error(`Bot error: ${err}`);
+        this.logger.error(`Bot error: ${e instanceof Error ? e.stack ?? e.message : String(e)}`);
       }
     });
   }
