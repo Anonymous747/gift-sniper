@@ -10,6 +10,7 @@ import { FiltersModule } from './filters/filters.module';
 import { AlertsModule } from './alerts/alerts.module';
 import { BotModule } from './bot/bot.module';
 import { IngestionModule } from './ingestion/ingestion.module';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { IngestionModule } from './ingestion/ingestion.module';
     FiltersModule,
     AlertsModule,
     BotModule,
+    HealthModule,
   ],
 })
 export class AppModule {}

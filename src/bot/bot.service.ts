@@ -22,17 +22,29 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       this.logger.warn('TELEGRAM_BOT_TOKEN not set; bot disabled');
       return;
     }
-    this.bot = new Bot(token);
+    const bot = new Bot(token);
+    try {
+      const me = await bot.api.getMe();
+      this.logger.log(`Telegram token OK — bot @${me.username} (id=${me.id})`);
+    } catch (err) {
+      this.logger.error(
+        `Telegram getMe failed (invalid token, revoked bot, or blocked egress to api.telegram.org): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      return;
+    }
+    this.bot = bot;
     this.registerHandlers();
     // Never await bot.start(): it runs getUpdates forever and would block Nest bootstrap (HTTP + other hooks).
     void this.bot
       .start({
         onStart: (info) =>
-          this.logger.log(`Telegram bot @${info.username} long-polling (deleteWebhook + getUpdates)`),
+          this.logger.log(`Telegram long-polling active @${info.username} (deleteWebhook + getUpdates)`),
       })
       .catch((err) => {
         this.logger.error(
-          `Telegram bot failed to start (check token, webhook conflict, network): ${
+          `Telegram bot failed to start (webhook conflict, 409 duplicate bot, network): ${
             err instanceof Error ? err.stack ?? err.message : String(err)
           }`,
         );
@@ -43,6 +55,11 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     if (this.bot) {
       await this.bot.stop();
     }
+  }
+
+  /** True while grammY simple long-polling loop is running. */
+  isLongPolling(): boolean {
+    return this.bot?.isRunning() ?? false;
   }
 
   async sendMessage(telegramId: string, text: string): Promise<void> {
@@ -58,7 +75,10 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
 
     this.bot.command('start', async (ctx) => {
       const from = ctx.from;
-      if (!from) return;
+      if (!from) {
+        await ctx.reply('Open this bot from a private chat (tap “Start” or “Open” here).').catch(() => undefined);
+        return;
+      }
       const tid = String(from.id);
       try {
         await this.prisma.user.upsert({

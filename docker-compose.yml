@@ -42,6 +42,8 @@ services:
       DATABASE_URL: postgresql://gift:gift@postgres:5432/gift_sniper?schema=public
       REDIS_URL: redis://redis:6379
       PORT: "3000"
+      # Also pass through compose interpolation so the token is never dropped if env_file parsing glitches.
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
     depends_on:
       postgres:
         condition: service_healthy
