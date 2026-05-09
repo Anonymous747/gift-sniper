@@ -4,13 +4,14 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <title>Алерты маркета</title>
+  <title>Фильтры подарков</title>
   <style>
     :root {
-      --bg: #1c1c1c;
-      --card: #2b2b2b;
+      --bg: #000000;
+      --card: #2c2c2e;
       --accent: #3390ec;
-      --text: #e8e8e8;
+      --green: #34c759;
+      --text: #ffffff;
       --muted: #8e8e93;
       --radius: 12px;
       --danger: #ff6b6b;
@@ -22,42 +23,54 @@
       background: var(--bg);
       color: var(--text);
       min-height: 100vh;
-      padding-bottom: 88px;
+      padding-bottom: 92px;
     }
-    .topbar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 12px 16px;
-      border-bottom: 1px solid #333;
+    .screen-title {
+      text-align: center;
+      font-size: 17px;
+      font-weight: 600;
+      padding: 14px 16px 8px;
+      margin: 0;
     }
-    .topbar h1 { margin: 0; font-size: 17px; font-weight: 600; }
-    .topbar .ghost { width: 28px; height: 28px; }
-    main { padding: 16px; }
-    h2.section-title { margin: 0 0 12px; font-size: 15px; font-weight: 600; color: var(--text); }
+    main { padding: 0 16px 16px; }
+    #err { color: var(--danger); font-size: 14px; margin-bottom: 12px; }
     .premium-card {
       background: var(--card);
       border-radius: var(--radius);
       padding: 14px 16px;
-      margin-bottom: 16px;
+      margin-bottom: 14px;
     }
-    .premium-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .premium-head { margin-bottom: 12px; }
     .badge-free {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
       background: #3a3a3c;
       color: var(--muted);
-      font-size: 12px;
-      padding: 4px 10px;
+      font-size: 13px;
+      padding: 6px 12px;
       border-radius: 20px;
+      font-weight: 500;
     }
-    .quota-label { font-size: 13px; color: var(--muted); margin-top: 8px; }
-    .quota-bar {
-      height: 6px;
-      background: #3a3a3c;
-      border-radius: 3px;
-      margin-top: 6px;
-      overflow: hidden;
+    .badge-free.premium-tier {
+      background: rgba(51, 144, 236, 0.25);
+      color: var(--accent);
     }
-    .quota-fill { height: 100%; background: var(--accent); border-radius: 3px; transition: width 0.2s; }
+    .quota-line {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 0;
+      font-size: 15px;
+    }
+    .quota-line .qi { font-size: 18px; width: 26px; text-align: center; flex-shrink: 0; }
+    .quota-line .qn { flex: 1; color: var(--text); }
+    .quota-line .qv { color: var(--muted); font-variant-numeric: tabular-nums; }
+    .q-div {
+      border: none;
+      border-top: 1px solid #3a3a3c;
+      margin: 0;
+    }
     .btn-premium {
       width: 100%;
       margin-top: 14px;
@@ -75,62 +88,80 @@
       background: var(--card);
       border-radius: var(--radius);
       padding: 4px;
-      margin-bottom: 16px;
+      margin-bottom: 14px;
+      gap: 2px;
     }
     .tab {
       flex: 1;
       text-align: center;
-      padding: 10px;
+      padding: 10px 6px;
       border-radius: 10px;
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 500;
       color: var(--muted);
       cursor: pointer;
       border: none;
       background: transparent;
-      color: inherit;
+      line-height: 1.2;
     }
+    .tab.tab-long { font-size: 11px; padding: 10px 4px; }
     .tab.active { background: var(--accent); color: #fff; }
     .empty-state {
       text-align: center;
-      padding: 36px 16px;
+      padding: 40px 16px;
       color: var(--muted);
-      font-size: 14px;
-      line-height: 1.5;
+      font-size: 15px;
+      line-height: 1.55;
     }
+    .empty-state .sub { font-size: 14px; margin-top: 8px; opacity: 0.9; }
     .filter-card {
       background: var(--card);
       border-radius: var(--radius);
       padding: 14px 16px;
       margin-bottom: 10px;
-      border: 1px solid #333;
+      border: 1px solid #3a3a3c;
     }
-    .filter-card .title { font-weight: 600; margin-bottom: 6px; }
-    .filter-card .meta { font-size: 13px; color: var(--muted); line-height: 1.4; }
+    .filter-card .title { font-weight: 600; margin-bottom: 6px; font-size: 16px; }
+    .filter-card .meta { font-size: 13px; color: var(--muted); line-height: 1.45; }
     .dock {
       position: fixed;
       bottom: 0;
       left: 0;
       right: 0;
       padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
-      background: linear-gradient(to top, var(--bg) 80%, transparent);
+      background: var(--bg);
+      border-top: 1px solid #2c2c2e;
       display: flex;
       align-items: center;
-      gap: 12px;
-      border-top: 1px solid #333;
+      gap: 10px;
     }
-    .dock-search {
-      flex: 1;
+    .dock-avatar {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: var(--green);
+      color: #fff;
+      font-weight: 700;
+      font-size: 17px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      border: none;
+      cursor: pointer;
+    }
+    .dock-search-wrap { flex: 1; min-width: 0; }
+    .dock-search-wrap input {
+      width: 100%;
       height: 44px;
       border-radius: var(--radius);
       background: var(--card);
-      border: 1px solid #444;
+      border: 1px solid #3a3a3c;
       padding: 0 14px;
-      color: var(--muted);
-      font-size: 14px;
-      display: flex;
-      align-items: center;
+      color: var(--text);
+      font-size: 15px;
     }
+    .dock-search-wrap input::placeholder { color: var(--muted); }
     .fab {
       width: 52px;
       height: 52px;
@@ -138,12 +169,11 @@
       background: var(--accent);
       border: none;
       color: #fff;
-      font-size: 26px;
+      font-size: 28px;
       line-height: 1;
       cursor: pointer;
       flex-shrink: 0;
     }
-    #err { color: var(--danger); font-size: 14px; margin-bottom: 12px; }
     .modal-overlay {
       display: none;
       position: fixed;
@@ -155,7 +185,7 @@
     }
     .modal-overlay.open { display: flex; }
     .modal {
-      background: var(--bg);
+      background: #1c1c1e;
       width: 100%;
       max-height: 88vh;
       border-radius: 16px 16px 0 0;
@@ -166,17 +196,20 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 16px;
+      margin-bottom: 12px;
     }
-    .modal-head h3 { margin: 0; font-size: 17px; }
+    .modal-head h3 { margin: 0; font-size: 17px; font-weight: 600; }
     .modal-close {
       background: none;
       border: none;
       color: var(--muted);
-      font-size: 22px;
+      font-size: 26px;
       cursor: pointer;
       padding: 4px 8px;
+      line-height: 1;
     }
+    .group-title { font-size: 16px; font-weight: 600; margin: 0 0 6px; color: var(--text); }
+    .group-sub { font-size: 13px; color: var(--muted); margin: 0 0 14px; line-height: 1.4; }
     .field-label { font-size: 13px; color: var(--muted); margin-bottom: 6px; display: block; }
     .input, .select-like {
       width: 100%;
@@ -188,15 +221,59 @@
       font-size: 15px;
       margin-bottom: 14px;
     }
-    .select-like { cursor: pointer; text-align: left; display: flex; justify-content: space-between; align-items: center; }
+    .input:focus, .select-like:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    .select-like {
+      cursor: pointer;
+      text-align: left;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+    .select-like .pick-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pick-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; color: var(--muted); }
+    .pick-clear {
+      display: none;
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: 20px;
+      line-height: 1;
+      padding: 0 4px;
+      cursor: pointer;
+    }
+    .pick-clear.visible { display: block; }
     .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .price-section-title {
+      font-size: 16px;
+      font-weight: 600;
+      margin: 4px 0 12px;
+    }
+    .chk-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      margin: 4px 0 16px;
+      font-size: 15px;
+      cursor: pointer;
+    }
+    .chk-row input {
+      width: 20px;
+      height: 20px;
+      margin-top: 2px;
+      accent-color: var(--accent);
+      flex-shrink: 0;
+    }
     .btn-cancel {
       width: 100%;
       padding: 14px;
-      margin-top: 8px;
+      margin-top: 4px;
       border-radius: var(--radius);
-      border: 1px solid #444;
-      background: transparent;
+      border: none;
+      background: var(--card);
       color: var(--text);
       font-size: 16px;
       cursor: pointer;
@@ -213,6 +290,7 @@
       font-weight: 600;
       cursor: pointer;
     }
+    .subhint { font-size: 13px; color: var(--muted); margin: -6px 0 14px; line-height: 1.4; }
     .picker-overlay {
       display: none;
       position: fixed;
@@ -224,7 +302,7 @@
     }
     .picker-overlay.open { display: flex; }
     .picker-sheet {
-      background: var(--bg);
+      background: #1c1c1e;
       border-radius: 16px 16px 0 0;
       max-height: 70vh;
       display: flex;
@@ -239,6 +317,10 @@
       background: var(--card);
       color: var(--text);
       font-size: 15px;
+    }
+    .picker-search input:focus {
+      outline: none;
+      border-color: var(--accent);
     }
     .picker-list { overflow-y: auto; flex: 1; padding: 0 8px 16px; }
     .picker-item {
@@ -257,37 +339,146 @@
       background: #3a3a3c;
       flex-shrink: 0;
     }
-    .subhint { font-size: 12px; color: var(--muted); margin: -10px 0 14px; }
-    .group-title { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin: 8px 0 12px; }
+    /* Stars subscription modal */
+    .sub-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 300;
+      background: rgba(0,0,0,0.65);
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+    }
+    .sub-overlay.open { display: flex; }
+    .sub-card {
+      width: 100%;
+      max-width: 340px;
+      background: #1c2333;
+      border-radius: 16px;
+      padding: 16px 18px 20px;
+      position: relative;
+    }
+    .sub-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      font-size: 14px;
+      color: var(--muted);
+    }
+    .sub-x {
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: 22px;
+      cursor: pointer;
+      padding: 4px;
+      line-height: 1;
+    }
+    .sub-art-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .sub-art {
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      background: linear-gradient(145deg, #2a3444, #1a1f2e);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 56px;
+      box-shadow: 0 0 24px rgba(255, 204, 0, 0.15);
+    }
+    .sub-price-pill {
+      margin-top: -18px;
+      background: #ffc107;
+      color: #1a1a1a;
+      font-weight: 700;
+      font-size: 15px;
+      padding: 6px 14px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .sub-card h4 {
+      margin: 16px 0 10px;
+      font-size: 18px;
+      font-weight: 700;
+      text-align: center;
+    }
+    .sub-desc {
+      font-size: 14px;
+      color: var(--muted);
+      text-align: center;
+      line-height: 1.45;
+      margin: 0 0 18px;
+    }
+    .sub-desc strong { color: var(--text); }
+    .sub-cta {
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: var(--radius);
+      background: var(--accent);
+      color: #fff;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .sub-terms {
+      margin: 14px 0 0;
+      font-size: 12px;
+      color: var(--muted);
+      text-align: center;
+      line-height: 1.4;
+    }
+    .sub-terms a { color: var(--accent); text-decoration: none; }
   </style>
 </head>
 <body>
-  <div class="topbar">
-    <span class="ghost"></span>
-    <h1>Алерты маркета</h1>
-    <span class="ghost"></span>
-  </div>
+  <h1 class="screen-title">Фильтры подарков</h1>
   <main>
-    <h2 class="section-title">Фильтры подарков</h2>
     <div id="err"></div>
     <div class="premium-card">
-      <div class="premium-row">
-        <span class="badge-free" id="tier-badge">Free</span>
+      <div class="premium-head">
+        <span class="badge-free" id="tier-badge">🆓 Бесплатно</span>
       </div>
-      <div class="quota-label">Листинг: <span id="q-list-used">0</span> / <span id="q-list-max">1</span></div>
-      <div class="quota-bar"><div class="quota-fill" id="q-list-fill" style="width:0%"></div></div>
-      <div class="quota-label" style="margin-top:12px">Продажа: <span id="q-sale-used">0</span> / <span id="q-sale-max">1</span></div>
-      <div class="quota-bar"><div class="quota-fill" id="q-sale-fill" style="width:0%"></div></div>
-      <button type="button" class="btn-premium" id="btn-premium">⚡ Получить премиум</button>
+      <div class="quota-line">
+        <span class="qi">📋</span>
+        <span class="qn">Листинг</span>
+        <span class="qv"><span id="q-list-used">0</span> / <span id="q-list-max">1</span></span>
+      </div>
+      <hr class="q-div" />
+      <div class="quota-line">
+        <span class="qi">💰</span>
+        <span class="qn">Продажа</span>
+        <span class="qv"><span id="q-sale-used">0</span> / <span id="q-sale-max">1</span></span>
+      </div>
+      <hr class="q-div" />
+      <div class="quota-line">
+        <span class="qi">🔄</span>
+        <span class="qn">Аренда</span>
+        <span class="qv"><span id="q-rent-used">0</span> / <span id="q-rent-max">1</span></span>
+      </div>
+      <button type="button" class="btn-premium" id="btn-premium">⚡️ Получить премиум</button>
     </div>
     <div class="tabs">
       <button type="button" class="tab active" data-tab="listing">Листинг</button>
       <button type="button" class="tab" data-tab="sale">Продажа</button>
+      <button type="button" class="tab tab-long" data-tab="rent">Сдано в аренду</button>
     </div>
     <div id="filters-wrap"></div>
   </main>
   <div class="dock">
-    <div class="dock-search">🔍 Поиск…</div>
+    <button type="button" class="dock-avatar" id="dock-avatar" aria-label="Профиль">?</button>
+    <div class="dock-search-wrap">
+      <input type="search" id="dock-search" placeholder="Поиск" autocomplete="off" />
+    </div>
     <button type="button" class="fab" id="fab-add" aria-label="Добавить">+</button>
   </div>
 
@@ -298,47 +489,84 @@
         <button type="button" class="modal-close" id="modal-close">×</button>
       </div>
       <div class="group-title">Основные параметры</div>
+      <p class="group-sub">Все поля необязательны. Можно создать фильтр только по цене.</p>
       <label class="field-label">Подарок</label>
       <button type="button" class="select-like" id="pick-gift">
-        <span id="pick-gift-label">Выберите подарок</span>
-        <span>▾</span>
+        <span class="pick-label" id="pick-gift-label">Выберите подарок</span>
+        <span class="pick-actions">
+          <button type="button" class="pick-clear" id="pick-clear" aria-label="Сбросить">×</button>
+          <span>▾</span>
+        </span>
       </button>
       <label class="field-label">Или номер подарка</label>
       <input type="text" inputmode="numeric" class="input" id="inp-serial" placeholder="Введите номер подарка" />
-      <div class="group-title">Цена</div>
+      <div class="price-section-title">Цена</div>
       <div class="row2">
         <div>
           <label class="field-label">От</label>
-          <input type="text" inputmode="decimal" class="input" id="inp-min" placeholder="TON" />
+          <input type="text" inputmode="decimal" class="input" id="inp-min" placeholder="Минимальная цена" />
         </div>
         <div>
           <label class="field-label">До</label>
-          <input type="text" inputmode="decimal" class="input" id="inp-max" placeholder="TON" />
+          <input type="text" inputmode="decimal" class="input" id="inp-max" placeholder="Максимальная цена" />
         </div>
       </div>
+      <label class="chk-row" id="also-sale-wrap" style="display:none">
+        <input type="checkbox" id="chk-also-sale" />
+        <span>Также создать фильтр продажи</span>
+      </label>
       <p class="subhint" id="sale-hint" style="display:none">Уведомления по продажам скоро подключим к потоку событий.</p>
+      <p class="subhint" id="rent-hint" style="display:none">Уведомления по аренде появятся после подключения событий.</p>
       <button type="button" class="btn-cancel" id="modal-cancel">Отмена</button>
-      <button type="button" class="btn-save" id="modal-save">Сохранить фильтр</button>
+      <button type="button" class="btn-save" id="modal-save">Создать</button>
     </div>
   </div>
 
   <div class="picker-overlay" id="picker-overlay">
     <div class="picker-sheet">
-      <div class="picker-search"><input type="search" id="gift-search" placeholder="Поиск…" /></div>
+      <div class="picker-search"><input type="search" id="gift-search" placeholder="Поиск..." /></div>
       <div class="picker-list" id="gift-list"></div>
+    </div>
+  </div>
+
+  <div class="sub-overlay" id="sub-overlay">
+    <div class="sub-card">
+      <div class="sub-top">
+        <span>Balance ⭐ <span id="stars-balance">0</span></span>
+        <button type="button" class="sub-x" id="sub-close">×</button>
+      </div>
+      <div class="sub-art-wrap">
+        <div class="sub-art">🤖</div>
+        <div class="sub-price-pill">⭐ <span id="stars-price">999</span></div>
+      </div>
+      <h4>Подписка на уведомления</h4>
+      <p class="sub-desc" id="sub-desc-line"></p>
+      <button type="button" class="sub-cta" id="sub-cta">Subscribe for ⭐ 999 / month</button>
+      <p class="sub-terms">By subscribing you agree to the <a href="#" id="sub-tos">Terms of Service</a>.</p>
     </div>
   </div>
 
   <script>
 (function () {
   var tg = window.Telegram && window.Telegram.WebApp;
-  if (tg) { tg.ready(); tg.expand(); }
+  if (tg) {
+    tg.ready();
+    tg.expand();
+    var tp = tg.themeParams || {};
+    if (tp.bg_color) document.documentElement.style.setProperty('--bg', tp.bg_color);
+    if (tp.secondary_bg_color) document.documentElement.style.setProperty('--card', tp.secondary_bg_color);
+    if (tp.button_color) document.documentElement.style.setProperty('--accent', tp.button_color);
+    if (tp.text_color) document.documentElement.style.setProperty('--text', tp.text_color);
+    if (tp.hint_color) document.documentElement.style.setProperty('--muted', tp.hint_color);
+  }
   var initData = tg && tg.initData ? tg.initData : '';
   var API = __API_PREFIX__;
+  var STARS_PRICE = 999;
   function hdr() {
     return { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': initData };
   }
   var tab = 'listing';
+  var modalTab = 'listing';
   var collections = [];
   var pickedGift = '';
 
@@ -350,28 +578,53 @@
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
 
+  function dockLetter() {
+    var u = tg && tg.initDataUnsafe && tg.initDataUnsafe.user;
+    var raw = (u && (u.first_name || u.username || u.last_name || '')) || '?';
+    return String(raw).trim().charAt(0).toUpperCase() || '?';
+  }
+  document.getElementById('dock-avatar').textContent = dockLetter();
+
+  function updatePickClear() {
+    var btn = document.getElementById('pick-clear');
+    if (pickedGift) btn.classList.add('visible');
+    else btn.classList.remove('visible');
+  }
+
   function setTab(t) {
     tab = t;
     document.querySelectorAll('.tab').forEach(function (el) {
       el.classList.toggle('active', el.getAttribute('data-tab') === t);
     });
     document.getElementById('sale-hint').style.display = t === 'sale' ? 'block' : 'none';
+    document.getElementById('rent-hint').style.display = t === 'rent' ? 'block' : 'none';
     loadFilters();
+  }
+
+  function syncModalHints() {
+    document.getElementById('sale-hint').style.display = modalTab === 'sale' ? 'block' : 'none';
+    document.getElementById('rent-hint').style.display = modalTab === 'rent' ? 'block' : 'none';
+    document.getElementById('also-sale-wrap').style.display =
+      modalTab === 'listing' ? 'flex' : 'none';
   }
 
   function loadMe() {
     api('/mini/me', { headers: hdr() }).then(function (d) {
       if (!d.ok) return;
-      document.getElementById('tier-badge').textContent =
-        d.tier === 'premium' ? 'Premium' : d.tier === 'pro' ? 'Pro' : 'Free';
-      var lu = d.listingAlertsToday, ll = d.listingAlertLimit;
-      document.getElementById('q-list-used').textContent = lu;
-      document.getElementById('q-list-max').textContent = ll;
-      document.getElementById('q-list-fill').style.width = Math.min(100, (lu / Math.max(ll, 1)) * 100) + '%';
-      var su = d.saleAlertsToday, sl = d.saleAlertLimit;
-      document.getElementById('q-sale-used').textContent = su;
-      document.getElementById('q-sale-max').textContent = sl;
-      document.getElementById('q-sale-fill').style.width = Math.min(100, (su / Math.max(sl, 1)) * 100) + '%';
+      var badge = document.getElementById('tier-badge');
+      if (d.tier === 'premium' || d.tier === 'pro') {
+        badge.textContent = d.tier === 'premium' ? '⭐ Premium' : '⭐ Pro';
+        badge.classList.add('premium-tier');
+      } else {
+        badge.textContent = '🆓 Бесплатно';
+        badge.classList.remove('premium-tier');
+      }
+      document.getElementById('q-list-used').textContent = d.listingAlertsToday;
+      document.getElementById('q-list-max').textContent = d.listingAlertLimit;
+      document.getElementById('q-sale-used').textContent = d.saleAlertsToday;
+      document.getElementById('q-sale-max').textContent = d.saleAlertLimit;
+      document.getElementById('q-rent-used').textContent = d.rentAlertsToday != null ? d.rentAlertsToday : 0;
+      document.getElementById('q-rent-max').textContent = d.rentAlertLimit != null ? d.rentAlertLimit : 1;
     });
   }
 
@@ -383,8 +636,24 @@
     if (c.minPriceTon != null || c.maxPriceTon != null)
       parts.push('Цена ' + (c.minPriceTon != null ? c.minPriceTon : '…') + '–' + (c.maxPriceTon != null ? c.maxPriceTon : '…') + ' TON');
     if (c.belowFloorPercentMin != null) parts.push('≥' + c.belowFloorPercentMin + '% ниже пола');
-    if (!parts.length) parts.push('MRKT · базовые условия');
+    if (!parts.length) parts.push('MRKT · любые условия');
     return parts.join(' · ');
+  }
+
+  function applyDockSearch() {
+    var q = document.getElementById('dock-search').value.trim().toLowerCase();
+    var cards = document.querySelectorAll('.filter-card');
+    var any = false;
+    cards.forEach(function (el) {
+      var hay = (el.getAttribute('data-search') || '').toLowerCase();
+      var show = !q || hay.indexOf(q) >= 0;
+      el.style.display = show ? '' : 'none';
+      if (show) any = true;
+    });
+    var empty = document.getElementById('filters-empty');
+    if (empty && cards.length) {
+      empty.style.display = q && !any ? 'block' : 'none';
+    }
   }
 
   function loadFilters() {
@@ -395,13 +664,19 @@
       if (!d.ok) { errEl.textContent = d.reason || 'Ошибка'; return; }
       var rows = d.filters || [];
       if (!rows.length) {
-        wrap.innerHTML = '<div class="empty-state">Фильтры не найдены<br/>Создайте первый фильтр</div>';
+        wrap.innerHTML = '<div class="empty-state" id="filters-empty">Фильтры не найдены<div class="sub">Создайте первый фильтр</div></div>';
         return;
       }
-      wrap.innerHTML = rows.map(function (f) {
-        return '<div class="filter-card"><div class="title">' + escapeHtml(f.name) + '</div>' +
-          '<div class="meta">' + escapeHtml(formatFilterSummary(f.criteria || {})) + '</div></div>';
-      }).join('');
+      wrap.innerHTML =
+        '<div class="empty-state" id="filters-empty" style="display:none">Ничего не найдено<div class="sub">Измените запрос в поиске</div></div>' +
+        rows.map(function (f) {
+          var summ = formatFilterSummary(f.criteria || {});
+          var searchBlob = (f.name || '') + ' ' + summ;
+          return '<div class="filter-card" data-search="' + escapeHtml(searchBlob).replace(/"/g,'&quot;') + '">' +
+            '<div class="title">' + escapeHtml(f.name) + '</div>' +
+            '<div class="meta">' + escapeHtml(summ) + '</div></div>';
+        }).join('');
+      applyDockSearch();
     }).catch(function () { errEl.textContent = 'Не удалось загрузить'; });
   }
 
@@ -424,6 +699,7 @@
       el.onclick = function () {
         pickedGift = el.getAttribute('data-name') || '';
         document.getElementById('pick-gift-label').textContent = pickedGift || 'Выберите подарок';
+        updatePickClear();
         document.getElementById('picker-overlay').classList.remove('open');
       };
     });
@@ -432,29 +708,82 @@
   document.querySelectorAll('.tab').forEach(function (btn) {
     btn.onclick = function () { setTab(btn.getAttribute('data-tab')); };
   });
+
+  document.getElementById('dock-search').oninput = applyDockSearch;
+
+  document.getElementById('dock-avatar').onclick = function () {
+    if (tg) tg.showAlert('Профиль скоро.');
+    else alert('Профиль скоро');
+  };
+
   document.getElementById('fab-add').onclick = function () {
+    modalTab = tab;
     pickedGift = '';
     document.getElementById('pick-gift-label').textContent = 'Выберите подарок';
+    updatePickClear();
     document.getElementById('inp-serial').value = '';
     document.getElementById('inp-min').value = '';
     document.getElementById('inp-max').value = '';
+    document.getElementById('chk-also-sale').checked = false;
+    syncModalHints();
     document.getElementById('modal-overlay').classList.add('open');
   };
+
   document.getElementById('modal-close').onclick = document.getElementById('modal-cancel').onclick = function () {
     document.getElementById('modal-overlay').classList.remove('open');
   };
-  document.getElementById('pick-gift').onclick = function () {
+
+  document.getElementById('pick-clear').onclick = function (e) {
+    e.stopPropagation();
+    pickedGift = '';
+    document.getElementById('pick-gift-label').textContent = 'Выберите подарок';
+    updatePickClear();
+  };
+
+  document.getElementById('pick-gift').onclick = function (e) {
+    if (e.target.id === 'pick-clear') return;
     document.getElementById('picker-overlay').classList.add('open');
     document.getElementById('gift-search').value = '';
     renderGiftList('');
     if (!collections.length) loadCollections();
   };
+
   document.getElementById('gift-search').oninput = function () {
     renderGiftList(document.getElementById('gift-search').value);
   };
+
   document.getElementById('picker-overlay').onclick = function (e) {
     if (e.target === document.getElementById('picker-overlay')) document.getElementById('picker-overlay').classList.remove('open');
   };
+
+  function openSubModal() {
+    document.getElementById('stars-price').textContent = STARS_PRICE;
+    var line = document.getElementById('sub-desc-line');
+    line.innerHTML =
+      'Оформите <strong>Подписка на уведомления</strong> в <strong>Market Alerts</strong> за <strong>' +
+      STARS_PRICE +
+      '</strong> звёзд в месяц.';
+    document.getElementById('sub-cta').textContent = 'Subscribe for ⭐ ' + STARS_PRICE + ' / month';
+    document.getElementById('sub-overlay').classList.add('open');
+  }
+
+  document.getElementById('btn-premium').onclick = openSubModal;
+  document.getElementById('sub-close').onclick = function () {
+    document.getElementById('sub-overlay').classList.remove('open');
+  };
+  document.getElementById('sub-overlay').onclick = function (e) {
+    if (e.target.id === 'sub-overlay') document.getElementById('sub-overlay').classList.remove('open');
+  };
+  document.getElementById('sub-cta').onclick = function () {
+    if (tg) tg.showAlert('Оплата Stars будет подключена в следующей версии.');
+    else alert('Оплата Stars скоро');
+  };
+  document.getElementById('sub-tos').onclick = function (e) {
+    e.preventDefault();
+    if (tg) tg.openLink('https://telegram.org/tos');
+    else window.open('https://telegram.org/tos');
+  };
+
   document.getElementById('modal-save').onclick = function () {
     var errEl = document.getElementById('err');
     errEl.textContent = '';
@@ -463,11 +792,12 @@
     var minT = parseFloat(document.getElementById('inp-min').value.replace(',', '.'));
     var maxT = parseFloat(document.getElementById('inp-max').value.replace(',', '.'));
     var body = {
-      tab: tab,
+      tab: modalTab,
       collectionDisplay: pickedGift || null,
       giftSerial: Number.isFinite(serial) ? serial : null,
       minPriceTon: Number.isFinite(minT) ? minT : null,
       maxPriceTon: Number.isFinite(maxT) ? maxT : null,
+      alsoCreateSale: modalTab === 'listing' && document.getElementById('chk-also-sale').checked,
     };
     fetch((API || '') + '/mini/filters', { method: 'POST', headers: hdr(), body: JSON.stringify(body) })
       .then(function (r) { return r.json(); })
@@ -476,12 +806,9 @@
         document.getElementById('modal-overlay').classList.remove('open');
         loadFilters();
         loadMe();
+        if (body.alsoCreateSale && tg) tg.showAlert('Созданы фильтры: листинг и продажа.');
       })
       .catch(function () { errEl.textContent = 'Сеть недоступна'; });
-  };
-  document.getElementById('btn-premium').onclick = function () {
-    if (tg) tg.showAlert('Premium скоро: мгновенные алерты и больше фильтров.');
-    else alert('Premium скоро');
   };
 
   loadMe();

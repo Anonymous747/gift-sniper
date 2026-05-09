@@ -54,12 +54,35 @@ function pascalConcatCollectionLabel(label: string): string {
     .join('');
 }
 
+/**
+ * Telegram collectible paths use PascalCase collection keys (`Obsidian-8926`), not MRKT lowercase (`obsidian-8926`).
+ * Hyphenated slugs become word-run segments: `lunar-snake` → `LunarSnake`.
+ * Tokens that already look PascalCase / camelCase are left unchanged per segment.
+ */
+function normalizeTelegramNftPathSegment(full: string): string {
+  const m = full.trim().match(/^(.+)-(\d+)$/);
+  if (!m) return full.trim();
+
+  const [, slugPart, num] = m;
+  const key = slugPart
+    .split('-')
+    .filter(Boolean)
+    .map((seg) => {
+      if (/[a-z][A-Z]/.test(seg)) return seg;
+      return seg.charAt(0).toUpperCase() + seg.slice(1).toLowerCase();
+    })
+    .join('');
+
+  return `${key}-${num}`;
+}
+
 /** Accepts `XmasStocking-219810` or full `https://t.me/nft/XmasStocking-219810`. */
 function parseNftTelegramSuffix(raw: string): string | null {
   const t = raw.trim();
   const fromUrl = t.match(/t\.me\/nft\/([^?\s#]+)/i);
   const seg = fromUrl?.[1] != null ? decodeURIComponent(fromUrl[1]) : t;
-  return NFT_PATH_SEGMENT.test(seg) ? seg : null;
+  if (!NFT_PATH_SEGMENT.test(seg)) return null;
+  return normalizeTelegramNftPathSegment(seg);
 }
 
 /**
@@ -77,7 +100,7 @@ export function telegramNftCollectibleUrl(event: NftLinkEvent): string | null {
 
   const id = event.gift_id.trim();
   if (NFT_PATH_SEGMENT.test(id)) {
-    return `https://t.me/nft/${id}`;
+    return `https://t.me/nft/${normalizeTelegramNftPathSegment(id)}`;
   }
 
   if (event.serial_number != null) {

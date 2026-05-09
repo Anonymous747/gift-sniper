@@ -6,6 +6,7 @@ import type { FilterCriteria } from './filter-criteria';
 export class FilterEngineService {
   matches(criteria: FilterCriteria, event: NormalizedMarketEvent): boolean {
     const tab = criteria.alertTab ?? 'listing';
+    if (tab === 'rent') return false;
     if (tab === 'listing' && event.event_type !== 'listing') return false;
     if (tab === 'sale' && event.event_type !== 'sale') return false;
 

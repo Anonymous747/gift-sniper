@@ -19,12 +19,14 @@ import type { FilterCriteria } from '../filters/filter-criteria';
 import { parseCriteriaJson } from '../filters/filter-criteria';
 
 type CreateMiniFilterBody = {
-  tab?: 'listing' | 'sale';
+  tab?: 'listing' | 'sale' | 'rent';
   collectionDisplay?: string | null;
   giftSerial?: number | null;
   minPriceTon?: number | null;
   maxPriceTon?: number | null;
   name?: string | null;
+  /** If true and tab is listing, also create the same filter for the «Продажа» tab. */
+  alsoCreateSale?: boolean;
 };
 
 @Controller('mini')
@@ -122,6 +124,10 @@ export class MiniAppController {
       where: { userId: user.id, kind: 'sale', sentAt: { gte: start } },
     });
     const saleAlertLimit = user.tier === UserTier.free ? 1 : 50;
+    const rentAlertsToday = await this.prisma.alertLog.count({
+      where: { userId: user.id, kind: 'rent', sentAt: { gte: start } },
+    });
+    const rentAlertLimit = user.tier === UserTier.free ? 1 : 50;
 
     return {
       ok: true as const,
@@ -130,6 +136,8 @@ export class MiniAppController {
       listingAlertLimit,
       saleAlertsToday,
       saleAlertLimit,
+      rentAlertsToday,
+      rentAlertLimit,
     };
   }
 
@@ -143,7 +151,8 @@ export class MiniAppController {
     const user = await this.ensureUser(v.telegramUserId);
     if (!user) return { ok: false as const, reason: 'user_missing' };
 
-    const wantTab = tab === 'sale' ? 'sale' : 'listing';
+    const wantTab =
+      tab === 'sale' ? 'sale' : tab === 'rent' ? 'rent' : 'listing';
     const rows = await this.prisma.userFilter.findMany({
       where: { userId: user.id },
       orderBy: { createdAt: 'desc' },
@@ -194,7 +203,8 @@ export class MiniAppController {
     const user = await this.ensureUser(v.telegramUserId);
     if (!user) return { ok: false as const, reason: 'user_missing' };
 
-    const tab = body.tab === 'sale' ? 'sale' : 'listing';
+    const tab =
+      body.tab === 'sale' ? 'sale' : body.tab === 'rent' ? 'rent' : 'listing';
     const coll = body.collectionDisplay?.trim();
     const serial =
       body.giftSerial != null && Number.isFinite(Number(body.giftSerial))
@@ -228,7 +238,13 @@ export class MiniAppController {
     if (serial != null) labelParts.push('#' + serial);
     const autoName =
       body.name?.trim() ||
-      (labelParts.length ? `Фильтр · ${labelParts.join(' ')}` : tab === 'sale' ? 'Продажа · новый' : 'Листинг · новый');
+      (labelParts.length
+        ? `Фильтр · ${labelParts.join(' ')}`
+        : tab === 'sale'
+          ? 'Продажа · новый'
+          : tab === 'rent'
+            ? 'Аренда · новый'
+            : 'Листинг · новый');
 
     await this.prisma.userFilter.create({
       data: {
@@ -238,6 +254,19 @@ export class MiniAppController {
         criteria: criteria as object,
       },
     });
+
+    if (tab === 'listing' && body.alsoCreateSale) {
+      const saleCriteria: FilterCriteria = { ...criteria, alertTab: 'sale' };
+      const saleName = `${autoName.slice(0, 100)} (продажа)`;
+      await this.prisma.userFilter.create({
+        data: {
+          userId: user.id,
+          name: saleName.slice(0, 120),
+          alertsEnabled: true,
+          criteria: saleCriteria as object,
+        },
+      });
+    }
 
     return { ok: true as const };
   }
