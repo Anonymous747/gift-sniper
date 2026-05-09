@@ -1,14 +1,20 @@
 # CI: build Docker image on every push / PR.
 # CD: SSH deploy on push to main.
 #
-# GitHub repo secrets (Settings → Secrets and variables → Actions):
-#   SSH_HOST       — server hostname or IP
-#   SSH_USER       — SSH login (e.g. deploy)
-#   SSH_PRIVATE_KEY — full private key (PEM) with access to the server
-#   DEPLOY_PATH    — absolute path to the git clone on the server (e.g. /opt/gift-sniper)
+# --- .env and CI/CD (read this) ---
+# `.env` is gitignored: it is NOT stored in the repo and is NOT deployed by `git pull`.
+# On the server, `git reset --hard origin/main` does NOT remove an existing `.env` (untracked file).
 #
-# One-time on the server: install Docker + Compose plugin, clone this repo, copy `.env.example`
-# to `.env`, set secrets, then push to `main` to deploy.
+# How `.env` gets on the server:
+#   A) Manual (default): SSH once, `cp .env.example .env`, edit secrets. Every later deploy keeps that file.
+#   B) From GitHub (optional): set secret SERVER_DOTENV_B64 to the base64 of your full `.env` file.
+#      Each deploy uploads it to `$DEPLOY_PATH/.env` before `docker compose up` (overwrites).
+#      Encode locally: `base64 < .env | tr -d '\n'`
+#
+# GitHub repo secrets (Settings → Secrets and variables → Actions):
+#   SSH_HOST, SSH_USER, SSH_PRIVATE_KEY, DEPLOY_PATH
+#   SERVER_DOTENV_B64 — optional; full .env file as one-line base64 (see above)
+#
 name: CI / CD
 
 on:
@@ -49,6 +55,40 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
+      - name: Decode SERVER_DOTENV_B64 for upload (optional)
+        id: remote_env
+        env:
+          B64: ${{ secrets.SERVER_DOTENV_B64 }}
+        run: |
+          if [ -z "${B64}" ]; then
+            echo "upload=false" >> "$GITHUB_OUTPUT"
+            echo "No SERVER_DOTENV_B64 secret — server will keep an existing .env or create from .env.example."
+          else
+            printf '%s' "$B64" | base64 -d > .env
+            if [ ! -s .env ]; then
+              echo "SERVER_DOTENV_B64 decoded to empty file"
+              exit 1
+            fi
+            chmod 600 .env
+            echo "upload=true" >> "$GITHUB_OUTPUT"
+            echo "Will upload .env from SERVER_DOTENV_B64 (${#B64} base64 chars)."
+          fi
+
+      # scp-action requires `target` to be a remote directory; basename of `source` becomes `.env` there.
+      - name: Upload .env to server
+        if: steps.remote_env.outputs.upload == 'true'
+        uses: appleboy/scp-action@v1.0.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: .env
+          target: ${{ secrets.DEPLOY_PATH }}/
+
+      - name: Remove local .env artifact
+        if: always()
+        run: rm -f .env
+
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.2.0
         with:
@@ -67,7 +107,12 @@ jobs:
             git fetch origin main
             git checkout main
             git reset --hard origin/main
-            if [ ! -f .env ]; then cp .env.example .env; fi
+            if [ -f .env ]; then
+              echo "Using .env on server (from prior manual setup or from SERVER_DOTENV_B64 upload in this workflow)."
+            else
+              echo "No .env yet — creating from .env.example (set secrets in this file on the server, or use SERVER_DOTENV_B64)."
+              cp .env.example .env
+            fi
             docker compose pull postgres redis 2>/dev/null || true
             docker compose up -d --build
             docker compose ps
