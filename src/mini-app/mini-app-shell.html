@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="https://unpkg.com/@lottiefiles/lottie-player@2.0.4/dist/lottie-player.js"></script>
   <title>Фильтры подарков</title>
   <style>
     :root {
@@ -253,6 +254,12 @@
       height: 100%;
       object-fit: cover;
       display: block;
+    }
+    .pick-inline-lottie {
+      width: 28px;
+      height: 28px;
+      display: block;
+      flex-shrink: 0;
     }
     .pick-icon-ph {
       display: block;
@@ -650,67 +657,160 @@
   }
   document.getElementById('dock-avatar').textContent = dockLetter();
 
+  var FRAGMENT_GIFT_LOTTIE = 'https://nft.fragment.com/gift';
+
+  /** Same PascalCase slug Telegram uses in `t.me/nft/{Slug}-{serial}` (Fragment hosts matching `.lottie.json`). */
+  function fragmentPascalSlug(label) {
+    var cleaned = String(label || '')
+      .replace(/^[•·\s]+|[•·\s]+$/g, '')
+      .trim();
+    if (!cleaned) return '';
+    return cleaned
+      .split(/[\s/_·•|-]+/)
+      .filter(Boolean)
+      .map(function (part) {
+        var alphaNum = part.replace(/[^a-zA-Z0-9]/g, '');
+        if (!alphaNum) return '';
+        return alphaNum.charAt(0).toUpperCase() + alphaNum.slice(1).toLowerCase();
+      })
+      .join('');
+  }
+
+  function giftFragmentLottieCandidates(collectionTitle) {
+    var slug = fragmentPascalSlug(collectionTitle);
+    if (!slug) return [];
+    var urls = [];
+    var serialRaw = document.getElementById('inp-serial').value.trim();
+    var serial = serialRaw === '' ? NaN : parseInt(serialRaw, 10);
+    if (Number.isFinite(serial) && serial > 0) {
+      urls.push(FRAGMENT_GIFT_LOTTIE + '/' + slug + '-' + serial + '.lottie.json');
+    }
+    urls.push(FRAGMENT_GIFT_LOTTIE + '/' + slug + '-1.lottie.json');
+    var seen = {};
+    return urls.filter(function (u) {
+      if (seen[u]) return false;
+      seen[u] = true;
+      return true;
+    });
+  }
+
+  function appendStickerOrPh(slot, stickerUrl) {
+    slot.innerHTML = '';
+    if (stickerUrl) {
+      var img = document.createElement('img');
+      img.className = 'pick-inline-thumb';
+      img.src = stickerUrl;
+      img.alt = '';
+      img.loading = 'lazy';
+      img.onerror = function () {
+        slot.innerHTML = '';
+        var ph = document.createElement('span');
+        ph.className = 'pick-icon-ph';
+        slot.appendChild(ph);
+      };
+      slot.appendChild(img);
+      return;
+    }
+    var ph = document.createElement('span');
+    ph.className = 'pick-icon-ph';
+    slot.appendChild(ph);
+  }
+
+  /** Prefer Fragment Lottie (Telegram gift animation); fall back to MRKT sticker WebP. */
+  function fillPickSlotLottieThenSticker(slot, collectionTitle, stickerUrl) {
+    slot.innerHTML = '';
+    var urls = giftFragmentLottieCandidates(collectionTitle);
+    if (!urls.length || typeof customElements === 'undefined' || !customElements.get('lottie-player')) {
+      appendStickerOrPh(slot, stickerUrl);
+      return;
+    }
+    var idx = 0;
+    function cleanupAndSticker() {
+      slot.innerHTML = '';
+      appendStickerOrPh(slot, stickerUrl);
+    }
+    function tryNext() {
+      if (idx >= urls.length) {
+        cleanupAndSticker();
+        return;
+      }
+      var url = urls[idx++];
+      var player = document.createElement('lottie-player');
+      player.setAttribute('src', url);
+      player.setAttribute('background', 'transparent');
+      player.setAttribute('speed', '1');
+      player.setAttribute('loop', '');
+      player.setAttribute('autoplay', '');
+      player.setAttribute('mode', 'normal');
+      player.className = 'pick-inline-lottie';
+      var done = false;
+      var t = setTimeout(function () {
+        if (done) return;
+        done = true;
+        if (player.parentNode === slot) slot.removeChild(player);
+        tryNext();
+      }, 4500);
+      player.addEventListener(
+        'error',
+        function () {
+          if (done) return;
+          done = true;
+          clearTimeout(t);
+          if (player.parentNode === slot) slot.removeChild(player);
+          tryNext();
+        },
+        { once: true },
+      );
+      player.addEventListener(
+        'load',
+        function () {
+          clearTimeout(t);
+        },
+        { once: true },
+      );
+      player.addEventListener(
+        'ready',
+        function () {
+          clearTimeout(t);
+        },
+        { once: true },
+      );
+      slot.appendChild(player);
+    }
+    tryNext();
+  }
+
   function syncGiftPickDisplay() {
     var slot = document.getElementById('pick-gift-icon-slot');
     var label = document.getElementById('pick-gift-label');
-    slot.innerHTML = '';
     if (!pickedGift) {
       label.textContent = 'Выберите подарок';
+      slot.innerHTML = '';
       var ph = document.createElement('span');
       ph.className = 'pick-icon-ph';
       slot.appendChild(ph);
       return;
     }
     label.textContent = pickedGift;
-    if (pickedGiftStickerUrl) {
-      var img = document.createElement('img');
-      img.className = 'pick-inline-thumb';
-      img.src = pickedGiftStickerUrl;
-      img.alt = '';
-      img.loading = 'lazy';
-      img.onerror = function () {
-        slot.innerHTML = '';
-        var fall = document.createElement('span');
-        fall.className = 'pick-icon-ph';
-        slot.appendChild(fall);
-      };
-      slot.appendChild(img);
-    } else {
-      var ph2 = document.createElement('span');
-      ph2.className = 'pick-icon-ph';
-      slot.appendChild(ph2);
-    }
+    fillPickSlotLottieThenSticker(slot, pickedGift, pickedGiftStickerUrl || '');
   }
 
   function syncModelPickDisplay() {
     var slot = document.getElementById('pick-model-icon-slot');
     var label = document.getElementById('pick-model-label');
-    slot.innerHTML = '';
     if (!pickedModel) {
       label.textContent = 'Выберите модель';
+      slot.innerHTML = '';
       var ph = document.createElement('span');
       ph.className = 'pick-icon-ph';
       slot.appendChild(ph);
       return;
     }
     label.textContent = pickedModel;
-    if (pickedModelStickerUrl) {
-      var img = document.createElement('img');
-      img.className = 'pick-inline-thumb';
-      img.src = pickedModelStickerUrl;
-      img.alt = '';
-      img.loading = 'lazy';
-      img.onerror = function () {
-        slot.innerHTML = '';
-        var fall = document.createElement('span');
-        fall.className = 'pick-icon-ph';
-        slot.appendChild(fall);
-      };
-      slot.appendChild(img);
+    if (pickedGift) {
+      fillPickSlotLottieThenSticker(slot, pickedGift, pickedModelStickerUrl || '');
     } else {
-      var ph2 = document.createElement('span');
-      ph2.className = 'pick-icon-ph';
-      slot.appendChild(ph2);
+      appendStickerOrPh(slot, pickedModelStickerUrl || '');
     }
   }
 
@@ -919,6 +1019,11 @@
   });
 
   document.getElementById('dock-search').oninput = applyDockSearch;
+
+  document.getElementById('inp-serial').addEventListener('input', function () {
+    if (pickedGift) syncGiftPickDisplay();
+    if (pickedModel) syncModelPickDisplay();
+  });
 
   document.getElementById('dock-avatar').onclick = function () {
     if (tg) tg.showAlert('Профиль скоро.');
