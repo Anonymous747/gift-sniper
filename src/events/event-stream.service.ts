@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type Redis from 'ioredis';
 import { Inject } from '@nestjs/common';
-import { REDIS_CLIENT } from '../redis/redis.module';
+import { REDIS_CLIENT } from '../redis/redis.constants';
 import type { NormalizedMarketEvent } from './normalized-event';
 
 const CONSUMER_GROUP = 'gift-pipeline';

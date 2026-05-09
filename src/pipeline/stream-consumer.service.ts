@@ -2,7 +2,7 @@ import { Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy } from '@ne
 import { ConfigService } from '@nestjs/config';
 import { Inject } from '@nestjs/common';
 import type Redis from 'ioredis';
-import { REDIS_CLIENT } from '../redis/redis.module';
+import { REDIS_CLIENT } from '../redis/redis.constants';
 import { EventStreamService } from '../events/event-stream.service';
 import { IngestionService } from '../ingestion/ingestion.service';
 
