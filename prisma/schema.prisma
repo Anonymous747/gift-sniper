@@ -1,0 +1,154 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum GiftEventType {
+  listing
+  sale
+  floor_update
+  delisting
+}
+
+enum UserTier {
+  free
+  premium
+  pro
+}
+
+model User {
+  id         String   @id @default(cuid())
+  telegramId String   @unique
+  username   String?
+  tier       UserTier @default(free)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  filters    UserFilter[]
+  watchlists Watchlist[]
+  alerts     AlertLog[]
+}
+
+model Market {
+  id        String       @id @default(cuid())
+  slug      String       @unique
+  name      String
+  createdAt DateTime     @default(now())
+  collections Collection[]
+}
+
+model Collection {
+  id          String   @id @default(cuid())
+  slug        String
+  marketId    String
+  market      Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
+  displayName String
+  verified    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  gifts Gift[]
+
+  @@unique([marketId, slug])
+}
+
+model Gift {
+  id           String   @id @default(cuid())
+  externalId   String
+  collectionId String
+  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  serialNumber Int?
+  name         String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  listings GiftListing[]
+  events   GiftEvent[]
+
+  @@unique([collectionId, externalId])
+}
+
+model GiftEvent {
+  id         String        @id @default(cuid())
+  eventUuid  String        @unique
+  marketSlug String
+  eventType  GiftEventType
+  giftId     String?
+  gift       Gift?         @relation(fields: [giftId], references: [id], onDelete: SetNull)
+  payload    Json
+  createdAt  DateTime      @default(now())
+
+  @@index([marketSlug, createdAt])
+}
+
+model GiftListing {
+  id            String   @id @default(cuid())
+  giftId        String
+  gift          Gift     @relation(fields: [giftId], references: [id], onDelete: Cascade)
+  marketSlug    String
+  priceTon      Decimal  @db.Decimal(20, 8)
+  floorTon      Decimal? @db.Decimal(20, 8)
+  belowFloorPct Decimal? @db.Decimal(10, 4)
+  sniperScore   Decimal? @db.Decimal(12, 4)
+  sellerId      String?
+  sellerName    String?
+  velocityHint  String?
+  liquidityHint String?
+  active        Boolean  @default(true)
+  listedAt      DateTime
+  updatedAt     DateTime @updatedAt
+
+  @@index([marketSlug, active, listedAt])
+  @@index([sniperScore])
+}
+
+model UserFilter {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name          String
+  alertsEnabled Boolean  @default(true)
+  criteria      Json
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model AlertLog {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userFilterId String?
+  dedupeKey    String
+  kind         String
+  payload      Json?
+  sentAt       DateTime @default(now())
+
+  @@index([userId, sentAt])
+  @@index([dedupeKey])
+}
+
+model Watchlist {
+  id                String   @id @default(cuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name              String
+  collectionSlugs   String[]
+  createdAt         DateTime @default(now())
+
+  @@index([userId])
+}
+
+model AnalyticsSnapshot {
+  id         String   @id @default(cuid())
+  marketSlug String
+  window     String
+  payload    Json
+  capturedAt DateTime @default(now())
+
+  @@index([marketSlug, window, capturedAt])
+}
