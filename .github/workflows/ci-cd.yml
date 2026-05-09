@@ -104,7 +104,10 @@ jobs:
           script_stop: true
           script: |
             set -euo pipefail
-            cd "${{ env.DEPLOY_PATH }}"
+            DEPLOY_PATH="${{ env.DEPLOY_PATH }}"
+            cd "$DEPLOY_PATH"
+            # Git 2.35+ refuses repo owned by another user (e.g. root vs deploy) unless marked safe.
+            git config --global --add safe.directory "$DEPLOY_PATH"
             echo "==> Git: fetch + reset to origin/main"
             git fetch origin main
             git checkout main
