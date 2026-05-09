@@ -28,9 +28,62 @@ model User {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  filters    UserFilter[]
-  watchlists Watchlist[]
-  alerts     AlertLog[]
+  filters       UserFilter[]
+  watchlists    Watchlist[]
+  alerts        AlertLog[]
+  userBehaviors UserBehavior[]
+}
+
+/** Tracked seller / wallet addresses from marketplace listings (smart-money heuristics). */
+model WhaleWallet {
+  id              String    @id @default(cuid())
+  address         String    @unique
+  smartMoneyScore Decimal   @default(0) @db.Decimal(12, 4)
+  listingCount    Int       @default(0)
+  lastActivityAt  DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([smartMoneyScore])
+}
+
+/** Lightweight event stream for personalization / recommendation (clicks, commands, opens). */
+model UserBehavior {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action    String
+  payload   Json?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+/** Public or team Telegram channels — each row is one “smart feed” with a routing recipe. */
+model IntelFeedChannel {
+  id             String   @id @default(cuid())
+  slug           String   @unique
+  title          String
+  recipe         String
+  telegramChatId String
+  enabled        Boolean  @default(true)
+  minSniperScore Decimal? @db.Decimal(12, 4)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  posts ChannelPost[]
+}
+
+model ChannelPost {
+  id                 String           @id @default(cuid())
+  channelId          String
+  channel            IntelFeedChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  eventUuid          String
+  telegramMessageId  String?
+  preview            String?          @db.VarChar(512)
+  createdAt          DateTime         @default(now())
+
+  @@unique([channelId, eventUuid])
 }
 
 model Market {

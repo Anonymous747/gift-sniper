@@ -11,7 +11,7 @@
 3. **Publish** events to a **Redis Stream** so consumers can scale independently.
 4. **Persist** gifts, listings, and events with **Prisma**; compute a **sniper score** for ranking.
 5. **Match** listings against per-user **filters** (markets, min discount below floor, optional price band, min sniper score).
-6. **Alert** matching users on Telegram; messages include price/floor/discount and an **MRKT link** (`https://t.me/mrkt/app?startapp=<gift_id>`).
+6. **Alert** matching users on Telegram; messages include price/floor/discount and a **Telegram MRKT Mini App link** that opens the gift (`https://t.me/mrkt/app?startapp=<slug>-<serial>` when a serial is known, otherwise `startapp=<api_gift_id>`).
 7. **Operate** a Telegram bot for `/start`, filter tuning, mute/unmute, and `/status`.
 8. **Emit metrics** (Prometheus + JSON), optional **fast-path Telegram alerts** from the MRKT collector, **Socket.IO** `listing` events after DB persist, **admin stats + stream replay**, and **beautiful-serial** detection (extra engagement message).
 
@@ -190,7 +190,7 @@ Copy from `.env.example`. Values are validated at boot (`src/config/env.validati
 | `/mute` / `/unmute` | Toggle `alertsEnabled` on user filters. |
 | `/help` | Command list. |
 
-Alerts are plain text; listing alerts include **Open gift:** `https://t.me/mrkt/app?startapp=<gift_id>` for MRKT.
+Alerts are plain text; listing alerts include **Open gift:** `https://t.me/mrkt/app?startapp=…` for MRKT — `startapp` is `{collection_slug}-{serial}` (e.g. `sakura-8957`) when `serial_number` is present, else the API `gift_id`.
 
 ---
 

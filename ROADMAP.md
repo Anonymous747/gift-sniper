@@ -21,6 +21,13 @@ This file captures the strategic direction discussed for Gift Sniper: what is **
 | **Content fingerprint** on normalized listing events | Live — `content_fingerprint` |
 | **Admin** `GET /admin/stats`, `POST /admin/replay` | Live — `X-Admin-Token` + `ADMIN_TOKEN` |
 | **Whale / collection analytics** | **Stubs** — `IntelligenceModule` |
+| **Whale wallet rollups** | **Live** — `WhaleTrackingService.onListing` → `WhaleWallet` + sniper `whale_activity_score` |
+| **Cross-market arbitrage hints** | **Live** — `ArbitrageEngineService` (Redis per collection+serial) + `IntelFeedsDispatcherService.dispatchArbitrage` |
+| **Intel feed network (DB + recipes)** | **Live** — `FeedsModule` + `INTEL_CHANNELS_JSON` bootstrap + `INTEL_FEED_POSTING_ENABLED` |
+| **User behavior log** | **Live** — `UserBehavior` + bot `/start` / `/filter` / `/discover` / watchlist |
+| **Rule-based recommendations** | **Live** — `RecommendationEngineService` + `/discover` |
+| **Collection listing pulse (Redis)** | **Live** — `CollectionAnalyticsService.recordListingPulse` |
+| **Telegram Mini App shell** | **Live** — `GET /mini` + `GET /mini/listings` (initData validation) |
 
 ## Priority 1 — Latency (ongoing tuning)
 
@@ -44,8 +51,8 @@ This file captures the strategic direction discussed for Gift Sniper: what is **
 
 ## Priority 5 — Whale tracking
 
-- **Stub:** `WhaleTrackingService`.
-- **Next:** schema for wallets, ingestion from MRKT sellers / on-chain, `smart_money_score`.
+- **Done:** `WhaleWallet` table + `onListing` seller upserts + score feeds sniper + `whale_activity` channel recipe.
+- **Next:** PnL / on-chain graph, whale-only channels with richer copy.
 
 ## Priority 6 — Collection analytics
 
@@ -54,8 +61,8 @@ This file captures the strategic direction discussed for Gift Sniper: what is **
 
 ## Priority 7 — WebSocket / Mini App
 
-- **Done:** server broadcasts `listing` after successful ingestion persist.
-- **Next:** auth namespaces, rate limits, Mini App client subscribing with JWT.
+- **Done:** server broadcasts `listing` after successful ingestion persist; **Mini App** dark shell at `GET /mini` + `GET /mini/listings` (Telegram `initData` HMAC).
+- **Next:** JWT namespaces for Socket.IO, rate limits, push / in-app purchases.
 
 ## Ops additions
 

@@ -4,6 +4,7 @@ import { Bot, type Context, GrammyError, HttpError } from 'grammy';
 import { PrismaService } from '../prisma/prisma.service';
 import { UserTier } from '@prisma/client';
 import type { FilterCriteria } from '../filters/filter-criteria';
+import { RecommendationEngineService } from '../intelligence/recommendation-engine.service';
 
 @Injectable()
 export class BotService implements OnModuleDestroy, OnModuleInit {
@@ -14,6 +15,7 @@ export class BotService implements OnModuleDestroy, OnModuleInit {
   constructor(
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
+    private readonly recommendations: RecommendationEngineService,
   ) {}
 
   async onModuleInit() {
@@ -83,6 +85,23 @@ export class BotService implements OnModuleDestroy, OnModuleInit {
       return;
     }
     await this.bot.api.sendMessage(telegramId, text, { parse_mode: undefined });
+  }
+
+  /** Post to a Telegram channel / supergroup where the bot is admin (same bot token). */
+  async sendChannelPost(chatId: string, text: string): Promise<number | null> {
+    if (!this.bot) return null;
+    try {
+      const m = await this.bot.api.sendMessage(chatId, text, {
+        parse_mode: undefined,
+        link_preview_options: { is_disabled: true },
+      });
+      return m.message_id;
+    } catch (err) {
+      this.logger.warn(
+        `sendChannelPost ${chatId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return null;
+    }
   }
 
   /**
@@ -155,6 +174,12 @@ export class BotService implements OnModuleDestroy, OnModuleInit {
         'Commands:\n' +
           '/start — register + default filter\n' +
           '/filter below <pct> [minTon] [maxTon] — update default filter\n' +
+          '/feeds — configured intel channels (network)\n' +
+          '/alerts — alert types\n' +
+          '/discover — personalized feed ideas\n' +
+          '/watchlist — list watchlists\n' +
+          '/watchlist add <name> <collection> [more…] — new watchlist\n' +
+          '/premium — tiers\n' +
           '/status — show profile\n' +
           '/mute — disable alerts\n' +
           '/unmute — enable alerts',
@@ -194,6 +219,85 @@ export class BotService implements OnModuleDestroy, OnModuleInit {
         data: { alertsEnabled: true },
       });
       await ctx.reply('Alerts enabled.');
+    });
+
+    this.bot.command('feeds', async (ctx) => {
+      const rows = await this.prisma.intelFeedChannel.findMany({
+        where: { enabled: true },
+        orderBy: { slug: 'asc' },
+        select: { slug: true, title: true, recipe: true },
+      });
+      if (rows.length === 0) {
+        await ctx.reply(
+          'No intel channels in DB yet. Set INTEL_CHANNELS_JSON + run migration, then INTEL_FEED_POSTING_ENABLED=1.',
+        );
+        return;
+      }
+      const lines = rows.map((r) => `• ${r.slug} — ${r.title} (${r.recipe})`);
+      await ctx.reply(`Intelligent feed network (DB):\n${lines.join('\n')}`);
+    });
+
+    this.bot.command('alerts', async (ctx) => {
+      await ctx.reply(
+        'Alert types (DM):\n' +
+          '• New listing snipes (filter match)\n' +
+          '• Beautiful serial bonus message\n' +
+          'Channels (optional): sniper_high, beautiful_serial, whale_activity, rare_finder, fast_flip, cheap_rare, arbitrage — see /feeds',
+      );
+    });
+
+    this.bot.command('premium', async (ctx) => {
+      await ctx.reply(
+        'Tiers (schema): free · premium · pro\n' +
+          'Free: delayed alerts optional (FREE_TIER_ALERT_DELAY_MS), public discovery via /discover.\n' +
+          'Premium (planned): instant alerts, private intel feeds, more filters.\n' +
+          'Pro (planned): API keys, terminal-style exports.',
+      );
+    });
+
+    this.bot.command('discover', async (ctx) => {
+      const from = ctx.from;
+      if (!from) return;
+      const u = await this.prisma.user.findUnique({ where: { telegramId: String(from.id) } });
+      if (!u) {
+        await ctx.reply('Run /start first.');
+        return;
+      }
+      await this.logBehavior(u.id, 'command_discover', {});
+      const tips = await this.recommendations.suggestFeedsForUser(u.id);
+      const body = tips.map((t) => `• ${t.title}\n  ${t.reason}`).join('\n\n');
+      await ctx.reply(`Suggested angles:\n\n${body}`);
+    });
+
+    this.bot.command('watchlist', async (ctx) => {
+      const from = ctx.from;
+      if (!from) return;
+      const u = await this.prisma.user.findUnique({
+        where: { telegramId: String(from.id) },
+        include: { watchlists: true },
+      });
+      if (!u) {
+        await ctx.reply('Run /start first.');
+        return;
+      }
+      const text = this.textFromRawUpdate(ctx) ?? '';
+      const args = text.split(/\s+/).slice(1);
+      if (args[0]?.toLowerCase() === 'add' && args.length >= 3) {
+        const name = args[1]!;
+        const slugs = args.slice(2).map((s) => s.trim()).filter(Boolean);
+        await this.prisma.watchlist.create({
+          data: { userId: u.id, name, collectionSlugs: slugs },
+        });
+        await this.logBehavior(u.id, 'watchlist_add', { name, slugs });
+        await ctx.reply(`Watchlist “${name}” saved: ${slugs.join(', ')}`);
+        return;
+      }
+      if (u.watchlists.length === 0) {
+        await ctx.reply('No watchlists. Use:\n/watchlist add MyAlpha Sakura LunarSnake');
+        return;
+      }
+      const lines = u.watchlists.map((w) => `• ${w.name}: ${w.collectionSlugs.join(', ') || '(empty)'}`);
+      await ctx.reply(`Your watchlists:\n${lines.join('\n')}`);
     });
 
     this.bot.command('filter', async (ctx) => {
@@ -238,7 +342,18 @@ export class BotService implements OnModuleDestroy, OnModuleInit {
         });
       }
       await ctx.reply(`Updated filter: ${JSON.stringify(criteria)}`);
+      await this.logBehavior(user.id, 'filter_update', criteria as object);
     });
+  }
+
+  private async logBehavior(userId: string, action: string, payload: object): Promise<void> {
+    try {
+      await this.prisma.userBehavior.create({
+        data: { userId, action, payload },
+      });
+    } catch (err) {
+      this.logger.debug(`logBehavior skipped: ${err instanceof Error ? err.message : err}`);
+    }
   }
 
   private async handleStart(ctx: Context): Promise<void> {
@@ -268,7 +383,7 @@ export class BotService implements OnModuleDestroy, OnModuleInit {
         },
         update: { username: from.username ?? undefined },
       });
-      const user = await this.prisma.user.findUnique({
+      let user = await this.prisma.user.findUnique({
         where: { telegramId: tid },
         include: { filters: true },
       });
@@ -284,12 +399,19 @@ export class BotService implements OnModuleDestroy, OnModuleInit {
             } satisfies FilterCriteria,
           },
         });
+        user = await this.prisma.user.findUnique({
+          where: { telegramId: tid },
+          include: { filters: true },
+        });
       }
+      if (user) await this.logBehavior(user.id, 'command_start', {});
+
       await this.safeReply(
         ctx,
-        'Gift Sniper is live.\n\n' +
+          'Gift Sniper is live.\n\n' +
           'Default alert: MRKT listings ≥5% below floor.\n' +
           'Use /filter below <percent> [minTon] [maxTon] to tune.\n' +
+          '/feeds /discover /watchlist — intelligence layer\n' +
           '/status — your tier & filters',
       );
     } catch (err) {

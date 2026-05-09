@@ -105,6 +105,31 @@ class EnvironmentVariables {
   @IsOptional()
   @IsString()
   PORTALS_ENABLED?: string;
+
+  /** JSON array of intel channels — see README. */
+  @IsOptional()
+  @IsString()
+  INTEL_CHANNELS_JSON?: string;
+
+  /** When `1`, post listing/arbitrage messages to `IntelFeedChannel` Telegram chats. */
+  @IsOptional()
+  @IsString()
+  INTEL_FEED_POSTING_ENABLED?: string;
+
+  /** Minimum cross-market spread % to broadcast arbitrage (Redis hash per collection+serial). */
+  @IsOptional()
+  @IsString()
+  ARBIT_MIN_SPREAD_PCT?: string;
+
+  /** Max age (seconds) for Mini App `initData` auth_date validation. */
+  @IsOptional()
+  @IsString()
+  TWA_MAX_AUTH_AGE_SEC?: string;
+
+  /** Optional absolute base URL for Mini App shell fetch (production: https://game.foryou.quest). */
+  @IsOptional()
+  @IsString()
+  PUBLIC_APP_BASE_URL?: string;
 }
 
 export function validateEnv(config: Record<string, unknown>) {

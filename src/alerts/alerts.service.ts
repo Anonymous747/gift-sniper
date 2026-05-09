@@ -5,7 +5,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { FilterEngineService } from '../filters/filter-engine.service';
 import { parseCriteriaJson } from '../filters/filter-criteria';
-import type { MarketSlug, NormalizedMarketEvent } from '../events/normalized-event';
+import type { NormalizedMarketEvent } from '../events/normalized-event';
+import { mrktTelegramGiftUrl } from '../lib/mrkt-telegram-link';
 import { BotService } from '../bot/bot.service';
 import { MetricsService } from '../metrics/metrics.service';
 
@@ -103,7 +104,7 @@ export class AlertsService {
   private formatListingAlert(e: NormalizedMarketEvent, sniperScore: number): string {
     const discount = e.below_floor_percent != null ? `${e.below_floor_percent.toFixed(1)}% below floor` : 'n/a';
     const rarity = e.rarity_rank != null ? `#${e.rarity_rank}` : 'n/a';
-    const giftLink = this.giftListingUrl(e.market, e.gift_id);
+    const giftLink = mrktTelegramGiftUrl(e);
     const linkBlock = giftLink != null ? `Open gift: ${giftLink}\n\n` : '';
     const serialLine =
       e.beautiful_label != null && e.beautiful_label.length > 0
@@ -124,17 +125,8 @@ export class AlertsService {
     );
   }
 
-  /**
-   * MRKT opens in Telegram as @mrkt Mini App; `startapp` is the listing/gift id from their API.
-   * @see https://t.me/mrkt/app?startapp=…
-   */
-  private giftListingUrl(market: MarketSlug, giftId: string): string | null {
-    if (market !== 'mrkt' || !giftId) return null;
-    return `https://t.me/mrkt/app?startapp=${encodeURIComponent(giftId)}`;
-  }
-
   private formatBeautifulAlert(e: NormalizedMarketEvent): string {
-    const link = this.giftListingUrl(e.market, e.gift_id);
+    const link = mrktTelegramGiftUrl(e);
     const tail = link != null ? `\n\nOpen: ${link}` : '';
     return (
       `🔥 Beautiful serial\n\n` +

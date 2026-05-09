@@ -7,6 +7,10 @@ import { computeSniperScore } from '../events/sniper-score';
 import { ConfigService } from '@nestjs/config';
 import { AlertsService } from '../alerts/alerts.service';
 import { AppEventBus } from '../realtime/app-event-bus';
+import { WhaleTrackingService } from '../intelligence/whale-tracking.service';
+import { CollectionAnalyticsService } from '../intelligence/collection-analytics.service';
+import { ArbitrageEngineService } from '../intelligence/arbitrage-engine.service';
+import { IntelFeedsDispatcherService } from '../feeds/intel-feeds-dispatcher.service';
 
 @Injectable()
 export class IngestionService {
@@ -17,6 +21,10 @@ export class IngestionService {
     private readonly prisma: PrismaService,
     private readonly alerts: AlertsService,
     private readonly bus: AppEventBus,
+    private readonly whales: WhaleTrackingService,
+    private readonly collectionAnalytics: CollectionAnalyticsService,
+    private readonly arbitrage: ArbitrageEngineService,
+    private readonly intelFeeds: IntelFeedsDispatcherService,
     config: ConfigService,
   ) {
     this.alertsFromFastPathOnly = config.get<string>('ALERTS_FROM_FAST_PATH_ONLY') === '1';
@@ -68,16 +76,21 @@ export class IngestionService {
   }
 
   private async persistListing(event: NormalizedMarketEvent): Promise<void> {
-    const sniperScore = computeSniperScore(event);
-    const priceTon = event.price_ton ?? 0;
-    const floorTon = event.floor_price;
-    const belowPct = event.below_floor_percent;
+    const whaleHint = await this.whales.onListing(event);
+    const enriched: NormalizedMarketEvent = {
+      ...event,
+      whale_activity_score: whaleHint ?? event.whale_activity_score ?? null,
+    };
+    const sniperScore = computeSniperScore(enriched);
+    const priceTon = enriched.price_ton ?? 0;
+    const floorTon = enriched.floor_price;
+    const belowPct = enriched.below_floor_percent;
 
     try {
       await this.prisma.$transaction(async (tx) => {
       const market = await tx.market.upsert({
-        where: { slug: event.market },
-        create: { slug: event.market, name: event.market.toUpperCase() },
+        where: { slug: enriched.market },
+        create: { slug: enriched.market, name: enriched.market.toUpperCase() },
         update: {},
       });
 
@@ -85,16 +98,16 @@ export class IngestionService {
         where: {
           marketId_slug: {
             marketId: market.id,
-            slug: event.collection,
+            slug: enriched.collection,
           },
         },
         create: {
           marketId: market.id,
-          slug: event.collection,
-          displayName: event.collection_display ?? event.collection,
+          slug: enriched.collection,
+          displayName: enriched.collection_display ?? enriched.collection,
         },
         update: {
-          displayName: event.collection_display ?? undefined,
+          displayName: enriched.collection_display ?? undefined,
         },
       });
 
@@ -102,49 +115,49 @@ export class IngestionService {
         where: {
           collectionId_externalId: {
             collectionId: collection.id,
-            externalId: event.gift_id,
+            externalId: enriched.gift_id,
           },
         },
         create: {
           collectionId: collection.id,
-          externalId: event.gift_id,
-          serialNumber: event.serial_number,
-          name: event.gift_name,
+          externalId: enriched.gift_id,
+          serialNumber: enriched.serial_number,
+          name: enriched.gift_name,
         },
         update: {
-          serialNumber: event.serial_number ?? undefined,
-          name: event.gift_name,
+          serialNumber: enriched.serial_number ?? undefined,
+          name: enriched.gift_name,
         },
       });
 
       await tx.giftEvent.create({
         data: {
-          eventUuid: event.event_id,
-          marketSlug: event.market,
+          eventUuid: enriched.event_id,
+          marketSlug: enriched.market,
           eventType: GiftEventType.listing,
           giftId: gift.id,
-          payload: event as unknown as Prisma.InputJsonValue,
+          payload: enriched as unknown as Prisma.InputJsonValue,
         },
       });
 
       await tx.giftListing.updateMany({
-        where: { giftId: gift.id, marketSlug: event.market, active: true },
+        where: { giftId: gift.id, marketSlug: enriched.market, active: true },
         data: { active: false },
       });
 
       await tx.giftListing.create({
         data: {
           giftId: gift.id,
-          marketSlug: event.market,
+          marketSlug: enriched.market,
           priceTon: new Prisma.Decimal(priceTon),
           floorTon: floorTon != null ? new Prisma.Decimal(floorTon) : null,
           belowFloorPct: belowPct != null ? new Prisma.Decimal(belowPct) : null,
           sniperScore: new Prisma.Decimal(sniperScore),
-          sellerId: event.seller_id,
-          sellerName: event.seller_name,
-          velocityHint: event.velocity ?? null,
-          liquidityHint: event.liquidity_score ?? null,
-          listedAt: new Date(event.timestamp),
+          sellerId: enriched.seller_id,
+          sellerName: enriched.seller_name,
+          velocityHint: enriched.velocity ?? null,
+          liquidityHint: enriched.liquidity_score ?? null,
+          listedAt: new Date(enriched.timestamp),
         },
       });
     });
@@ -156,11 +169,24 @@ export class IngestionService {
       throw err;
     }
 
+    this.collectionAnalytics.recordListingPulse(enriched);
+
+    const arb = await this.arbitrage.onListing(enriched);
+    if (arb) {
+      await this.intelFeeds.dispatchArbitrage(arb).catch((e) => {
+        this.logger.warn(`Arbitrage channel post failed: ${e instanceof Error ? e.message : e}`);
+      });
+    }
+
+    await this.intelFeeds.dispatchListing(enriched, sniperScore).catch((e) => {
+      this.logger.warn(`Intel feed dispatch failed: ${e instanceof Error ? e.message : e}`);
+    });
+
     if (!this.alertsFromFastPathOnly) {
-      await this.alerts.notifyMatchingUsers(event, sniperScore).catch((err) => {
+      await this.alerts.notifyMatchingUsers(enriched, sniperScore).catch((err) => {
         this.logger.error(`Alert dispatch failed: ${err instanceof Error ? err.message : err}`);
       });
     }
-    this.bus.emit('listing', { event, sniperScore, ingestedAt: Date.now() });
+    this.bus.emit('listing', { event: enriched, sniperScore, ingestedAt: Date.now() });
   }
 }

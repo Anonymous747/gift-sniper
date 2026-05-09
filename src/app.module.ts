@@ -15,6 +15,7 @@ import { MetricsModule } from './metrics/metrics.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { AdminModule } from './admin/admin.module';
 import { IntelligenceModule } from './intelligence/intelligence.module';
+import { MiniAppModule } from './mini-app/mini-app.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { IntelligenceModule } from './intelligence/intelligence.module';
     HealthModule,
     AdminModule,
     IntelligenceModule,
+    MiniAppModule,
   ],
 })
 export class AppModule {}
