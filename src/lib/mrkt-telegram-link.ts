@@ -55,9 +55,21 @@ function pascalConcatCollectionLabel(label: string): string {
 }
 
 /**
+ * One run in a Telegram `t.me/nft/{Key}-{serial}` path (no hyphens in Key).
+ * MRKT often sends camelCase (`topHat`) or lowercase (`tophat`); Telegram expects PascalCase (`TopHat`).
+ */
+function normalizeNftSlugRun(seg: string): string {
+  if (!seg) return '';
+  // Inner camelCase (e.g. topHat → TopHat); always uppercase first letter for valid collectible URLs.
+  if (/[a-z][A-Z]/.test(seg)) {
+    return seg.charAt(0).toUpperCase() + seg.slice(1);
+  }
+  return seg.charAt(0).toUpperCase() + seg.slice(1).toLowerCase();
+}
+
+/**
  * Telegram collectible paths use PascalCase collection keys (`Obsidian-8926`), not MRKT lowercase (`obsidian-8926`).
- * Hyphenated slugs become word-run segments: `lunar-snake` → `LunarSnake`.
- * Tokens that already look PascalCase / camelCase are left unchanged per segment.
+ * Hyphenated slugs become concatenated runs: `lunar-snake` → `LunarSnake`.
  */
 function normalizeTelegramNftPathSegment(full: string): string {
   const m = full.trim().match(/^(.+)-(\d+)$/);
@@ -67,13 +79,18 @@ function normalizeTelegramNftPathSegment(full: string): string {
   const key = slugPart
     .split('-')
     .filter(Boolean)
-    .map((seg) => {
-      if (/[a-z][A-Z]/.test(seg)) return seg;
-      return seg.charAt(0).toUpperCase() + seg.slice(1).toLowerCase();
-    })
+    .map(normalizeNftSlugRun)
     .join('');
 
   return `${key}-${num}`;
+}
+
+/** When MRKT sends `nftTelegramSuffix` for a different listing, ignore it and derive from gift_id / collection. */
+function nftSuffixSerialMatchesSegment(parsedSegment: string, serial: number | null): boolean {
+  if (serial == null) return true;
+  const m = parsedSegment.match(/-(\d+)$/);
+  if (!m) return true;
+  return Number(m[1]) === serial;
 }
 
 /** Accepts `XmasStocking-219810` or full `https://t.me/nft/XmasStocking-219810`. */
@@ -95,7 +112,9 @@ export function telegramNftCollectibleUrl(event: NftLinkEvent): string | null {
   const suffixRaw = event.nft_telegram_suffix?.trim();
   if (suffixRaw) {
     const parsed = parseNftTelegramSuffix(suffixRaw);
-    if (parsed) return `https://t.me/nft/${parsed}`;
+    if (parsed && nftSuffixSerialMatchesSegment(parsed, event.serial_number)) {
+      return `https://t.me/nft/${parsed}`;
+    }
   }
 
   const id = event.gift_id.trim();

@@ -19,6 +19,8 @@ export interface NormalizedMarketEvent {
   nft_telegram_suffix?: string | null;
   collection_display?: string;
   gift_name: string;
+  /** MRKT physical/visual model when collector provides it (e.g. Gold Bar). */
+  gift_model?: string | null;
   serial_number: number | null;
   price_ton: number | null;
   floor_price: number | null;

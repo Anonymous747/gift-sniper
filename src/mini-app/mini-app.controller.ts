@@ -17,10 +17,13 @@ import { giftTelegramDisplayUrl } from '../lib/mrkt-telegram-link';
 import type { NormalizedMarketEvent } from '../events/normalized-event';
 import type { FilterCriteria } from '../filters/filter-criteria';
 import { parseCriteriaJson } from '../filters/filter-criteria';
+import { MrktPublicCatalogService } from '../collectors/mrkt/mrkt-public-catalog.service';
 
 type CreateMiniFilterBody = {
   tab?: 'listing' | 'sale' | 'rent';
   collectionDisplay?: string | null;
+  /** MRKT `modelName` when user narrows by visual model. */
+  giftModel?: string | null;
   giftSerial?: number | null;
   minPriceTon?: number | null;
   maxPriceTon?: number | null;
@@ -34,6 +37,7 @@ export class MiniAppController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly mrktCatalog: MrktPublicCatalogService,
   ) {}
 
   private shellHtmlCached: string | null = null;
@@ -193,6 +197,64 @@ export class MiniAppController {
     return { ok: true as const, names };
   }
 
+  /** Full Telegram gift collections from MRKT public catalog (fallback: DB display names). */
+  @Get('gifts/catalog')
+  async giftsCatalog(
+    @Headers('x-telegram-init-data') initData: string | undefined,
+    @Query('includeHidden') includeHidden?: string,
+  ) {
+    const v = this.validateInit(initData);
+    if (!v.ok) return { ok: false as const, reason: v.reason };
+    await this.ensureUser(v.telegramUserId);
+
+    try {
+      const gifts = await this.mrktCatalog.getGiftCollections({
+        includeHidden: includeHidden === '1' || includeHidden === 'true',
+      });
+      return { ok: true as const, source: 'mrkt' as const, gifts };
+    } catch {
+      const market = await this.prisma.market.findUnique({ where: { slug: 'mrkt' } });
+      if (!market) return { ok: true as const, source: 'db' as const, gifts: [] as const };
+      const rows = await this.prisma.collection.findMany({
+        where: { marketId: market.id },
+        select: { displayName: true },
+        distinct: ['displayName'],
+        orderBy: { displayName: 'asc' },
+        take: 500,
+      });
+      const gifts = rows
+        .map((r) => r.displayName)
+        .filter((n) => n.length > 0)
+        .map((collectionTitle) => ({
+          collectionTitle,
+          stickerUrl: null as string | null,
+          isHidden: false,
+        }));
+      return { ok: true as const, source: 'db' as const, gifts };
+    }
+  }
+
+  /** Models for one collection (MRKT POST `/gifts/models`). */
+  @Get('gifts/models')
+  async giftModels(
+    @Headers('x-telegram-init-data') initData: string | undefined,
+    @Query('collection') collection: string | undefined,
+  ) {
+    const v = this.validateInit(initData);
+    if (!v.ok) return { ok: false as const, reason: v.reason };
+    await this.ensureUser(v.telegramUserId);
+
+    const coll = collection?.trim();
+    if (!coll) return { ok: false as const, reason: 'collection_required' };
+
+    try {
+      const models = await this.mrktCatalog.getModelsForCollection(coll);
+      return { ok: true as const, models };
+    } catch {
+      return { ok: true as const, models: [], degraded: true as const };
+    }
+  }
+
   @Post('filters')
   async createFilter(
     @Headers('x-telegram-init-data') initData: string | undefined,
@@ -206,6 +268,7 @@ export class MiniAppController {
     const tab =
       body.tab === 'sale' ? 'sale' : body.tab === 'rent' ? 'rent' : 'listing';
     const coll = body.collectionDisplay?.trim();
+    const modelRaw = body.giftModel?.trim();
     const serial =
       body.giftSerial != null && Number.isFinite(Number(body.giftSerial))
         ? Math.floor(Number(body.giftSerial))
@@ -228,6 +291,7 @@ export class MiniAppController {
       markets: ['mrkt'],
       alertTab: tab,
       collectionsInclude: coll ? [coll] : undefined,
+      giftModelsInclude: modelRaw ? [modelRaw] : undefined,
       giftSerial: serial,
       minPriceTon: minP,
       maxPriceTon: maxP,
@@ -235,6 +299,7 @@ export class MiniAppController {
 
     const labelParts: string[] = [];
     if (coll) labelParts.push(coll);
+    if (modelRaw) labelParts.push(modelRaw);
     if (serial != null) labelParts.push('#' + serial);
     const autoName =
       body.name?.trim() ||

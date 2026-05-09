@@ -339,6 +339,15 @@
       background: #3a3a3c;
       flex-shrink: 0;
     }
+    .picker-thumb {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      object-fit: cover;
+      flex-shrink: 0;
+      background: #3a3a3c;
+    }
+    .select-like-muted { opacity: 0.45; }
     /* Stars subscription modal */
     .sub-overlay {
       display: none;
@@ -500,6 +509,15 @@
       </button>
       <label class="field-label">Или номер подарка</label>
       <input type="text" inputmode="numeric" class="input" id="inp-serial" placeholder="Введите номер подарка" />
+      <div class="price-section-title" style="margin-top:8px">Дополнительные параметры</div>
+      <label class="field-label">Модель</label>
+      <button type="button" class="select-like select-like-muted" id="pick-model">
+        <span class="pick-label" id="pick-model-label">Выберите модель</span>
+        <span class="pick-actions">
+          <button type="button" class="pick-clear" id="pick-model-clear" aria-label="Сбросить">×</button>
+          <span>▾</span>
+        </span>
+      </button>
       <div class="price-section-title">Цена</div>
       <div class="row2">
         <div>
@@ -526,6 +544,13 @@
     <div class="picker-sheet">
       <div class="picker-search"><input type="search" id="gift-search" placeholder="Поиск..." /></div>
       <div class="picker-list" id="gift-list"></div>
+    </div>
+  </div>
+
+  <div class="picker-overlay" id="model-picker-overlay">
+    <div class="picker-sheet">
+      <div class="picker-search"><input type="search" id="model-search" placeholder="Поиск..." /></div>
+      <div class="picker-list" id="model-list"></div>
     </div>
   </div>
 
@@ -567,8 +592,10 @@
   }
   var tab = 'listing';
   var modalTab = 'listing';
-  var collections = [];
+  var giftCatalog = [];
+  var modelRows = [];
   var pickedGift = '';
+  var pickedModel = '';
 
   function api(path, opts) {
     return fetch((API || '') + path, opts || {}).then(function (r) { return r.json(); });
@@ -576,6 +603,10 @@
 
   function escapeHtml(s) {
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function escapeAttr(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;');
   }
 
   function dockLetter() {
@@ -589,6 +620,25 @@
     var btn = document.getElementById('pick-clear');
     if (pickedGift) btn.classList.add('visible');
     else btn.classList.remove('visible');
+    var mb = document.getElementById('pick-model-clear');
+    if (pickedModel) mb.classList.add('visible');
+    else mb.classList.remove('visible');
+    var pm = document.getElementById('pick-model');
+    if (pickedGift) pm.classList.remove('select-like-muted');
+    else pm.classList.add('select-like-muted');
+  }
+
+  function clearModelSelection() {
+    pickedModel = '';
+    document.getElementById('pick-model-label').textContent = 'Выберите модель';
+    updatePickClear();
+  }
+
+  function clearGiftSelection() {
+    pickedGift = '';
+    document.getElementById('pick-gift-label').textContent = 'Выберите подарок';
+    clearModelSelection();
+    updatePickClear();
   }
 
   function setTab(t) {
@@ -632,6 +682,8 @@
     var parts = [];
     if (c.collectionsInclude && c.collectionsInclude.length)
       parts.push(c.collectionsInclude.join(', '));
+    if (c.giftModelsInclude && c.giftModelsInclude.length)
+      parts.push('модель: ' + c.giftModelsInclude.join(', '));
     if (c.giftSerial != null) parts.push('#' + c.giftSerial);
     if (c.minPriceTon != null || c.maxPriceTon != null)
       parts.push('Цена ' + (c.minPriceTon != null ? c.minPriceTon : '…') + '–' + (c.maxPriceTon != null ? c.maxPriceTon : '…') + ' TON');
@@ -680,27 +732,68 @@
     }).catch(function () { errEl.textContent = 'Не удалось загрузить'; });
   }
 
-  function loadCollections() {
-    api('/mini/collections', { headers: hdr() }).then(function (d) {
-      if (d.ok && d.names) collections = d.names;
+  function loadGiftCatalog(done) {
+    api('/mini/gifts/catalog', { headers: hdr() }).then(function (d) {
+      giftCatalog = d.ok && Array.isArray(d.gifts) ? d.gifts : [];
+      renderGiftList(document.getElementById('gift-search').value);
+      if (typeof done === 'function') done();
+    }).catch(function () {
+      giftCatalog = [];
       renderGiftList('');
+      if (typeof done === 'function') done();
     });
   }
 
   function renderGiftList(q) {
     var ql = (q || '').toLowerCase();
     var list = document.getElementById('gift-list');
-    var names = collections.filter(function (n) { return !ql || n.toLowerCase().indexOf(ql) >= 0; }).slice(0, 200);
-    list.innerHTML = names.map(function (n) {
-      return '<div class="picker-item" data-name="' + escapeHtml(n).replace(/"/g,'&quot;') + '">' +
-        '<div class="picker-icon"></div><span>' + escapeHtml(n) + '</span></div>';
+    var rows = giftCatalog.filter(function (g) {
+      var t = (g.collectionTitle || '').toLowerCase();
+      return !ql || t.indexOf(ql) >= 0;
+    });
+    list.innerHTML = rows.map(function (g) {
+      var title = g.collectionTitle || '';
+      var thumb = g.stickerUrl
+        ? '<img class="picker-thumb" src="' + escapeAttr(g.stickerUrl) + '" alt="" loading="lazy" />'
+        : '<div class="picker-icon"></div>';
+      return '<div class="picker-item" data-name="' + escapeHtml(title).replace(/"/g,'&quot;') + '">' +
+        thumb + '<span>' + escapeHtml(title) + '</span></div>';
     }).join('');
     list.querySelectorAll('.picker-item').forEach(function (el) {
       el.onclick = function () {
         pickedGift = el.getAttribute('data-name') || '';
         document.getElementById('pick-gift-label').textContent = pickedGift || 'Выберите подарок';
+        clearModelSelection();
         updatePickClear();
         document.getElementById('picker-overlay').classList.remove('open');
+      };
+    });
+  }
+
+  function renderModelList(q) {
+    var ql = (q || '').toLowerCase();
+    var list = document.getElementById('model-list');
+    var rows = modelRows.filter(function (m) {
+      var name = (m.modelName || '').toLowerCase();
+      var tail = m.rarityPercent != null ? String(m.rarityPercent) + '%' : '';
+      var blob = name + ' ' + tail;
+      return !ql || blob.indexOf(ql) >= 0;
+    });
+    list.innerHTML = rows.map(function (m) {
+      var label = m.modelName;
+      if (m.rarityPercent != null) label += ' (' + m.rarityPercent + '%)';
+      var thumb = m.stickerUrl
+        ? '<img class="picker-thumb" src="' + escapeAttr(m.stickerUrl) + '" alt="" loading="lazy" />'
+        : '<div class="picker-icon"></div>';
+      return '<div class="picker-item" data-model="' + escapeHtml(m.modelName).replace(/"/g,'&quot;') + '">' +
+        thumb + '<span>' + escapeHtml(label) + '</span></div>';
+    }).join('');
+    list.querySelectorAll('.picker-item').forEach(function (el) {
+      el.onclick = function () {
+        pickedModel = el.getAttribute('data-model') || '';
+        document.getElementById('pick-model-label').textContent = pickedModel || 'Выберите модель';
+        updatePickClear();
+        document.getElementById('model-picker-overlay').classList.remove('open');
       };
     });
   }
@@ -718,9 +811,7 @@
 
   document.getElementById('fab-add').onclick = function () {
     modalTab = tab;
-    pickedGift = '';
-    document.getElementById('pick-gift-label').textContent = 'Выберите подарок';
-    updatePickClear();
+    clearGiftSelection();
     document.getElementById('inp-serial').value = '';
     document.getElementById('inp-min').value = '';
     document.getElementById('inp-max').value = '';
@@ -735,8 +826,13 @@
 
   document.getElementById('pick-clear').onclick = function (e) {
     e.stopPropagation();
-    pickedGift = '';
-    document.getElementById('pick-gift-label').textContent = 'Выберите подарок';
+    clearGiftSelection();
+  };
+
+  document.getElementById('pick-model-clear').onclick = function (e) {
+    e.stopPropagation();
+    pickedModel = '';
+    document.getElementById('pick-model-label').textContent = 'Выберите модель';
     updatePickClear();
   };
 
@@ -745,7 +841,7 @@
     document.getElementById('picker-overlay').classList.add('open');
     document.getElementById('gift-search').value = '';
     renderGiftList('');
-    if (!collections.length) loadCollections();
+    if (!giftCatalog.length) loadGiftCatalog();
   };
 
   document.getElementById('gift-search').oninput = function () {
@@ -754,6 +850,33 @@
 
   document.getElementById('picker-overlay').onclick = function (e) {
     if (e.target === document.getElementById('picker-overlay')) document.getElementById('picker-overlay').classList.remove('open');
+  };
+
+  document.getElementById('pick-model').onclick = function (e) {
+    if (e.target.id === 'pick-model-clear') return;
+    if (!pickedGift) {
+      if (tg) tg.showAlert('Сначала выберите подарок.');
+      return;
+    }
+    document.getElementById('model-picker-overlay').classList.add('open');
+    document.getElementById('model-search').value = '';
+    modelRows = [];
+    renderModelList('');
+    api('/mini/gifts/models?collection=' + encodeURIComponent(pickedGift), { headers: hdr() }).then(function (d) {
+      modelRows = d.ok && Array.isArray(d.models) ? d.models : [];
+      renderModelList('');
+    }).catch(function () {
+      modelRows = [];
+      renderModelList('');
+    });
+  };
+
+  document.getElementById('model-search').oninput = function () {
+    renderModelList(document.getElementById('model-search').value);
+  };
+
+  document.getElementById('model-picker-overlay').onclick = function (e) {
+    if (e.target === document.getElementById('model-picker-overlay')) document.getElementById('model-picker-overlay').classList.remove('open');
   };
 
   function openSubModal() {
@@ -794,6 +917,7 @@
     var body = {
       tab: modalTab,
       collectionDisplay: pickedGift || null,
+      giftModel: pickedModel || null,
       giftSerial: Number.isFinite(serial) ? serial : null,
       minPriceTon: Number.isFinite(minT) ? minT : null,
       maxPriceTon: Number.isFinite(maxT) ? maxT : null,
@@ -813,6 +937,7 @@
 
   loadMe();
   loadFilters();
+  loadGiftCatalog();
 })();
   </script>
 </body>

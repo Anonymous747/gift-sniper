@@ -187,6 +187,7 @@ export class MrktCollector implements OnModuleInit, OnModuleDestroy {
       nft_telegram_suffix: item.nft_telegram_suffix,
       collection_display: item.collection_display,
       gift_name: item.gift_name,
+      gift_model: item.gift_model ?? null,
       serial_number: item.serial_number ?? null,
       price_ton: item.price_ton,
       floor_price: floor,

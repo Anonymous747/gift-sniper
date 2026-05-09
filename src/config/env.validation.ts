@@ -38,6 +38,18 @@ class EnvironmentVariables {
   @IsString()
   MRKT_API_BASE?: string;
 
+  /** CDN origin for sticker paths from MRKT catalog (`modelStickerThumbnailKey`). */
+  @IsOptional()
+  @IsString()
+  MRKT_CDN_BASE?: string;
+
+  /** TTL (ms) for in-memory MRKT `/gifts/collections` + `/gifts/models` cache. */
+  @IsOptional()
+  @IsInt()
+  @Min(60_000)
+  @Max(86_400_000)
+  MRKT_CATALOG_CACHE_MS?: number;
+
   /** Optional JSON merged into default POST /gifts/saling body (camelCase keys). */
   @IsOptional()
   @IsString()
@@ -161,6 +173,12 @@ export function validateEnv(config: Record<string, unknown>) {
     typeof normalized.MRKT_SALING_MAX_PAGES === 'string'
   ) {
     normalized.MRKT_SALING_MAX_PAGES = parseInt(normalized.MRKT_SALING_MAX_PAGES as string, 10);
+  }
+  if (
+    normalized.MRKT_CATALOG_CACHE_MS !== undefined &&
+    typeof normalized.MRKT_CATALOG_CACHE_MS === 'string'
+  ) {
+    normalized.MRKT_CATALOG_CACHE_MS = parseInt(normalized.MRKT_CATALOG_CACHE_MS as string, 10);
   }
 
   const validated = plainToInstance(EnvironmentVariables, normalized, {

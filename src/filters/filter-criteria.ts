@@ -12,6 +12,8 @@ export interface FilterCriteria {
   alertTab?: 'listing' | 'sale' | 'rent';
   /** Match listings for this serial only when set. */
   giftSerial?: number;
+  /** MRKT model names (`modelName`), optional refinement within a collection. */
+  giftModelsInclude?: string[];
 }
 
 export function parseCriteriaJson(raw: unknown): FilterCriteria {

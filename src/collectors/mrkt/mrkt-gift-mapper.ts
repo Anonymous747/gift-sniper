@@ -48,12 +48,19 @@ export function mapMrktGiftToExternalListing(raw: Record<string, unknown>): Exte
     'nft_telegram_suffix',
     'telegramNftSuffix',
     'telegram_nft_suffix',
+    'telegramGiftName',
+    'telegram_gift_name',
+    'nftSlug',
+    'nft_slug',
+    'telegramCollectibleSlug',
+    'telegram_collectible_slug',
   );
   const number = pickNum(raw, 'number', 'Number');
   const title = pickStr(raw, 'title', 'Title', 'name', 'Name');
   const giftName =
     title ||
     (number != null ? `${collection} #${number}` : `${collection} · ${id.slice(0, 8)}`);
+  const giftModel = pickStr(raw, 'modelName', 'model_name', 'ModelName') || null;
 
   const floorNano =
     pickNum(raw, 'floorPriceNanoTONsByCollection', 'floorPriceNanoTONsByBackdropModel') ??
@@ -81,6 +88,7 @@ export function mapMrktGiftToExternalListing(raw: Record<string, unknown>): Exte
     nft_telegram_suffix: nftSuffixRaw || undefined,
     collection_display: pickStr(raw, 'collectionTitle', 'collection_title') || undefined,
     gift_name: giftName,
+    gift_model: giftModel || undefined,
     serial_number: number,
     price_ton: Number(priceTon.toFixed(4)),
     floor_price: floorTon != null ? Number(floorTon.toFixed(4)) : null,

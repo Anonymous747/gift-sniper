@@ -36,6 +36,12 @@ export class FilterEngineService {
       const set = new Set(criteria.collectionsExclude.map((c) => c.toLowerCase()));
       if (set.has(coll)) return false;
     }
+    if (criteria.giftModelsInclude?.length) {
+      const mod = event.gift_model?.trim().toLowerCase();
+      if (!mod) return false;
+      const want = new Set(criteria.giftModelsInclude.map((m) => m.trim().toLowerCase()).filter(Boolean));
+      if (!want.has(mod)) return false;
+    }
     if (criteria.maxRarityRank != null && event.rarity_rank != null) {
       if (event.rarity_rank > criteria.maxRarityRank) return false;
     }

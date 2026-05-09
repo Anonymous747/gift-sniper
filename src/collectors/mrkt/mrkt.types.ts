@@ -5,6 +5,7 @@ export type ExternalListing = {
   nft_telegram_suffix?: string;
   collection_display?: string;
   gift_name: string;
+  gift_model?: string | null;
   serial_number?: number | null;
   price_ton: number;
   floor_price?: number | null;
