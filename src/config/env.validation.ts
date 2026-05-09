@@ -68,6 +68,12 @@ class EnvironmentVariables {
   @IsInt()
   @Min(1)
   PORT?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(65535)
+  APP_PORT?: number;
 }
 
 export function validateEnv(config: Record<string, unknown>) {
@@ -90,6 +96,9 @@ export function validateEnv(config: Record<string, unknown>) {
   }
   if (normalized.PORT !== undefined && typeof normalized.PORT === 'string') {
     normalized.PORT = parseInt(normalized.PORT as string, 10);
+  }
+  if (normalized.APP_PORT !== undefined && typeof normalized.APP_PORT === 'string') {
+    normalized.APP_PORT = parseInt(normalized.APP_PORT as string, 10);
   }
   if (
     normalized.MRKT_SALING_MAX_PAGES !== undefined &&

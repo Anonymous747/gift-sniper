@@ -14,7 +14,10 @@
     "prisma:studio": "prisma studio",
     "mock:feed": "ts-node -r tsconfig-paths/register scripts/mock-feed.ts",
     "env:sync": "node scripts/sync-env.cjs",
-    "postinstall": "node scripts/sync-env.cjs"
+    "postinstall": "node scripts/sync-env.cjs",
+    "docker:up": "docker compose up -d --build",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f app"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.15",
@@ -22,6 +25,7 @@
     "@nestjs/core": "^10.4.15",
     "@nestjs/platform-express": "^10.4.15",
     "@prisma/client": "^6.7.0",
+    "prisma": "^6.7.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
     "grammy": "^1.35.0",
@@ -39,7 +43,6 @@
     "@typescript-eslint/eslint-plugin": "^8.30.1",
     "@typescript-eslint/parser": "^8.30.1",
     "eslint": "^9.25.0",
-    "prisma": "^6.7.0",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.8.3"

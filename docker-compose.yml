@@ -1,3 +1,5 @@
+# Full stack: API + Postgres + Redis.
+# Place a `.env` next to this file (copy from `.env.example` / `npm run env:sync`). Never commit real secrets.
 services:
   postgres:
     image: postgres:16-alpine
@@ -5,18 +7,53 @@ services:
       POSTGRES_USER: gift
       POSTGRES_PASSWORD: gift
       POSTGRES_DB: gift_sniper
-    ports:
-      - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gift -d gift_sniper"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - internal
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - internal
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Always use in-cluster URLs (override host-local DATABASE_URL / REDIS_URL from .env).
+      DATABASE_URL: postgresql://gift:gift@postgres:5432/gift_sniper?schema=public
+      REDIS_URL: redis://redis:6379
+      PORT: "3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    networks:
+      - internal
+
+networks:
+  internal:
 
 volumes:
   pgdata:
