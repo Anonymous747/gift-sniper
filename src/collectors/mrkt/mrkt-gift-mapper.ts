@@ -40,6 +40,15 @@ export function mapMrktGiftToExternalListing(raw: Record<string, unknown>): Exte
   if (!Number.isFinite(priceTon) || priceTon <= 0) return null;
 
   const collection = pickStr(raw, 'collectionName', 'collection_name') || 'Unknown';
+  const collectionSlug =
+    pickStr(raw, 'collectionSlug', 'collection_slug') || undefined;
+  const nftSuffixRaw = pickStr(
+    raw,
+    'nftTelegramSuffix',
+    'nft_telegram_suffix',
+    'telegramNftSuffix',
+    'telegram_nft_suffix',
+  );
   const number = pickNum(raw, 'number', 'Number');
   const title = pickStr(raw, 'title', 'Title', 'name', 'Name');
   const giftName =
@@ -68,6 +77,8 @@ export function mapMrktGiftToExternalListing(raw: Record<string, unknown>): Exte
   return {
     gift_id: id,
     collection,
+    collection_slug: collectionSlug,
+    nft_telegram_suffix: nftSuffixRaw || undefined,
     collection_display: pickStr(raw, 'collectionTitle', 'collection_title') || undefined,
     gift_name: giftName,
     serial_number: number,

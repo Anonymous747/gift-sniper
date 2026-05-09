@@ -13,6 +13,10 @@ export interface NormalizedMarketEvent {
   event_type: NormalizedEventType;
   gift_id: string;
   collection: string;
+  /** MRKT collection slug when API provides it — prefer over slugifying `collection` for `startapp`. */
+  collection_slug?: string | null;
+  /** Optional `XmasStocking-219810` segment for https://t.me/nft/… when API supplies it. */
+  nft_telegram_suffix?: string | null;
   collection_display?: string;
   gift_name: string;
   serial_number: number | null;

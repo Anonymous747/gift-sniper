@@ -1,9 +1,31 @@
-import { Controller, Get, Header, Headers } from '@nestjs/common';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+import {
+  Body,
+  Controller,
+  Get,
+  Header,
+  Headers,
+  Post,
+  Query,
+} from '@nestjs/common';
+import { UserTier } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { validateTelegramWebAppInitData } from '../lib/telegram-webapp';
-import { mrktTelegramGiftUrl } from '../lib/mrkt-telegram-link';
+import { giftTelegramDisplayUrl } from '../lib/mrkt-telegram-link';
 import type { NormalizedMarketEvent } from '../events/normalized-event';
+import type { FilterCriteria } from '../filters/filter-criteria';
+import { parseCriteriaJson } from '../filters/filter-criteria';
+
+type CreateMiniFilterBody = {
+  tab?: 'listing' | 'sale';
+  collectionDisplay?: string | null;
+  giftSerial?: number | null;
+  minPriceTon?: number | null;
+  maxPriceTon?: number | null;
+  name?: string | null;
+};
 
 @Controller('mini')
 export class MiniAppController {
@@ -12,68 +34,212 @@ export class MiniAppController {
     private readonly config: ConfigService,
   ) {}
 
+  private shellHtmlCached: string | null = null;
+
+  private getShellHtml(apiPrefix: string): string {
+    if (!this.shellHtmlCached) {
+      const path = join(__dirname, 'mini-app-shell.html');
+      this.shellHtmlCached = readFileSync(path, 'utf8');
+    }
+    return this.shellHtmlCached.replace('__API_PREFIX__', JSON.stringify(apiPrefix));
+  }
+
+  private validateInit(initData: string | undefined): { ok: false; reason: string } | { ok: true; telegramUserId: string } {
+    const token = this.config.get<string>('TELEGRAM_BOT_TOKEN')?.trim();
+    if (!token) return { ok: false, reason: 'bot_not_configured' };
+    const maxAge = Number(this.config.get<string>('TWA_MAX_AUTH_AGE_SEC') ?? 86400);
+    const v = validateTelegramWebAppInitData(initData ?? '', token, Number.isFinite(maxAge) ? maxAge : 86400);
+    if (!v.ok || !v.userId) return { ok: false, reason: v.ok ? 'no_user' : v.reason };
+    return { ok: true, telegramUserId: v.userId };
+  }
+
+  private async ensureUser(telegramUserId: string) {
+    await this.prisma.user.upsert({
+      where: { telegramId: telegramUserId },
+      create: {
+        telegramId: telegramUserId,
+        tier: UserTier.free,
+        filters: {
+          create: {
+            name: 'Default',
+            alertsEnabled: true,
+            criteria: {
+              markets: ['mrkt'],
+              belowFloorPercentMin: 5,
+              alertTab: 'listing',
+            } satisfies FilterCriteria as object,
+          },
+        },
+      },
+      update: {},
+    });
+    let user = await this.prisma.user.findUnique({
+      where: { telegramId: telegramUserId },
+      include: { filters: true },
+    });
+    if (user && user.filters.length === 0) {
+      await this.prisma.userFilter.create({
+        data: {
+          userId: user.id,
+          name: 'Default',
+          alertsEnabled: true,
+          criteria: {
+            markets: ['mrkt'],
+            belowFloorPercentMin: 5,
+            alertTab: 'listing',
+          } satisfies FilterCriteria as object,
+        },
+      });
+      user = await this.prisma.user.findUnique({
+        where: { telegramId: telegramUserId },
+        include: { filters: true },
+      });
+    }
+    return user;
+  }
+
   @Get()
   @Header('Content-Type', 'text/html; charset=utf-8')
   shell(): string {
     const base = (this.config.get<string>('PUBLIC_APP_BASE_URL') ?? '').replace(/\/$/, '');
-    const apiPrefix = base ? `${base}` : '';
-    return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <title>Gift Sniper</title>
-  <style>
-    :root { color-scheme: dark; }
-    body { margin:0; font-family: system-ui, sans-serif; background:#0b0f14; color:#e8edf4; min-height:100vh; }
-    header { padding:14px 16px; border-bottom:1px solid #1c2530; font-weight:600; letter-spacing:.02em; }
-    main { padding:12px 16px 32px; }
-    .card { background:#121a24; border:1px solid #1c2530; border-radius:12px; padding:12px; margin-bottom:10px; }
-    .muted { color:#7a8aa0; font-size:13px; }
-    .price { color:#5eead4; font-weight:600; }
-    a { color:#7dd3fc; }
-    #err { color:#fca5a5; font-size:14px; margin-bottom:12px; }
-  </style>
-</head>
-<body>
-  <header>⚡ Gift Sniper</header>
-  <main>
-    <p class="muted">Realtime listings (MRKT deep links when serial known).</p>
-    <div id="err"></div>
-    <div id="list"></div>
-  </main>
-  <script>
-    (function () {
-      var tg = window.Telegram && window.Telegram.WebApp;
-      if (tg) { tg.ready(); tg.expand(); }
-      var initData = tg && tg.initData ? tg.initData : '';
-      var errEl = document.getElementById('err');
-      var listEl = document.getElementById('list');
-      var base = ${JSON.stringify(apiPrefix)};
-      var url = (base || '') + '/mini/listings';
-      fetch(url, { headers: { 'X-Telegram-Init-Data': initData } })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-          if (!data.ok) { errEl.textContent = data.reason || 'Unauthorized'; return; }
-          listEl.innerHTML = (data.listings || []).map(function (x) {
-            return '<div class="card"><div>' + escapeHtml(x.title) + '</div><div class="muted">' +
-              escapeHtml(x.collection) + ' · ' + escapeHtml(x.market) + '</div><div class="price">' +
-              escapeHtml(String(x.priceTon)) + ' TON</div>' +
-              (x.link ? '<div><a href="' + escapeAttr(x.link) + '">Open in Telegram</a></div>' : '') + '</div>';
-          }).join('') || '<p class="muted">No active listings.</p>';
-        })
-        .catch(function (e) { errEl.textContent = 'Load failed'; });
-      function escapeHtml(s) {
-        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      }
-      function escapeAttr(s) {
-        return escapeHtml(s).replace(/"/g,'&quot;');
-      }
-    })();
-  </script>
-</body>
-</html>`;
+    return this.getShellHtml(base);
+  }
+
+  @Get('me')
+  async me(@Headers('x-telegram-init-data') initData: string | undefined) {
+    const v = this.validateInit(initData);
+    if (!v.ok) return { ok: false as const, reason: v.reason };
+    const user = await this.ensureUser(v.telegramUserId);
+    if (!user) return { ok: false as const, reason: 'user_missing' };
+
+    const start = new Date();
+    start.setUTCHours(0, 0, 0, 0);
+    const listingAlertsToday = await this.prisma.alertLog.count({
+      where: { userId: user.id, kind: 'listing', sentAt: { gte: start } },
+    });
+    const listingAlertLimit = user.tier === UserTier.free ? 1 : 50;
+    const saleAlertsToday = await this.prisma.alertLog.count({
+      where: { userId: user.id, kind: 'sale', sentAt: { gte: start } },
+    });
+    const saleAlertLimit = user.tier === UserTier.free ? 1 : 50;
+
+    return {
+      ok: true as const,
+      tier: user.tier,
+      listingAlertsToday,
+      listingAlertLimit,
+      saleAlertsToday,
+      saleAlertLimit,
+    };
+  }
+
+  @Get('filters')
+  async filters(
+    @Headers('x-telegram-init-data') initData: string | undefined,
+    @Query('tab') tab: string | undefined,
+  ) {
+    const v = this.validateInit(initData);
+    if (!v.ok) return { ok: false as const, reason: v.reason };
+    const user = await this.ensureUser(v.telegramUserId);
+    if (!user) return { ok: false as const, reason: 'user_missing' };
+
+    const wantTab = tab === 'sale' ? 'sale' : 'listing';
+    const rows = await this.prisma.userFilter.findMany({
+      where: { userId: user.id },
+      orderBy: { createdAt: 'desc' },
+    });
+    const filters = rows
+      .filter((r) => {
+        const c = parseCriteriaJson(r.criteria);
+        const t = c.alertTab ?? 'listing';
+        return t === wantTab;
+      })
+      .map((r) => ({
+        id: r.id,
+        name: r.name,
+        criteria: parseCriteriaJson(r.criteria),
+        alertsEnabled: r.alertsEnabled,
+      }));
+
+    return { ok: true as const, filters };
+  }
+
+  @Get('collections')
+  async collections(@Headers('x-telegram-init-data') initData: string | undefined) {
+    const v = this.validateInit(initData);
+    if (!v.ok) return { ok: false as const, reason: v.reason };
+    await this.ensureUser(v.telegramUserId);
+
+    const market = await this.prisma.market.findUnique({ where: { slug: 'mrkt' } });
+    if (!market) return { ok: true as const, names: [] as string[] };
+
+    const rows = await this.prisma.collection.findMany({
+      where: { marketId: market.id },
+      select: { displayName: true },
+      distinct: ['displayName'],
+      orderBy: { displayName: 'asc' },
+      take: 400,
+    });
+    const names = rows.map((r) => r.displayName).filter((n) => n.length > 0);
+    return { ok: true as const, names };
+  }
+
+  @Post('filters')
+  async createFilter(
+    @Headers('x-telegram-init-data') initData: string | undefined,
+    @Body() body: CreateMiniFilterBody,
+  ) {
+    const v = this.validateInit(initData);
+    if (!v.ok) return { ok: false as const, reason: v.reason };
+    const user = await this.ensureUser(v.telegramUserId);
+    if (!user) return { ok: false as const, reason: 'user_missing' };
+
+    const tab = body.tab === 'sale' ? 'sale' : 'listing';
+    const coll = body.collectionDisplay?.trim();
+    const serial =
+      body.giftSerial != null && Number.isFinite(Number(body.giftSerial))
+        ? Math.floor(Number(body.giftSerial))
+        : undefined;
+
+    const minP =
+      body.minPriceTon != null && Number.isFinite(Number(body.minPriceTon))
+        ? Number(body.minPriceTon)
+        : undefined;
+    const maxP =
+      body.maxPriceTon != null && Number.isFinite(Number(body.maxPriceTon))
+        ? Number(body.maxPriceTon)
+        : undefined;
+
+    if (minP != null && maxP != null && minP > maxP) {
+      return { ok: false as const, reason: 'min_price_gt_max' };
+    }
+
+    const criteria: FilterCriteria = {
+      markets: ['mrkt'],
+      alertTab: tab,
+      collectionsInclude: coll ? [coll] : undefined,
+      giftSerial: serial,
+      minPriceTon: minP,
+      maxPriceTon: maxP,
+    };
+
+    const labelParts: string[] = [];
+    if (coll) labelParts.push(coll);
+    if (serial != null) labelParts.push('#' + serial);
+    const autoName =
+      body.name?.trim() ||
+      (labelParts.length ? `Фильтр · ${labelParts.join(' ')}` : tab === 'sale' ? 'Продажа · новый' : 'Листинг · новый');
+
+    await this.prisma.userFilter.create({
+      data: {
+        userId: user.id,
+        name: autoName.slice(0, 120),
+        alertsEnabled: true,
+        criteria: criteria as object,
+      },
+    });
+
+    return { ok: true as const };
   }
 
   @Get('listings')
@@ -101,15 +267,23 @@ export class MiniAppController {
       const c = r.gift.collection;
       const pseudo: Pick<
         NormalizedMarketEvent,
-        'market' | 'gift_id' | 'collection' | 'serial_number'
+        | 'market'
+        | 'gift_id'
+        | 'collection'
+        | 'serial_number'
+        | 'collection_slug'
+        | 'collection_display'
       > = {
         market: r.marketSlug as NormalizedMarketEvent['market'],
         gift_id: r.gift.externalId,
         collection: c.displayName ?? c.slug,
+        collection_display: c.displayName ?? undefined,
+        collection_slug: c.slug,
         serial_number: r.gift.serialNumber,
       };
-      const link = mrktTelegramGiftUrl({
+      const link = giftTelegramDisplayUrl({
         ...pseudo,
+        nft_telegram_suffix: null,
         event_id: '',
         event_type: 'listing',
         gift_name: r.gift.name,

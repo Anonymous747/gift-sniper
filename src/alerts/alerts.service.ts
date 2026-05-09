@@ -6,7 +6,7 @@ import { RedisService } from '../redis/redis.service';
 import { FilterEngineService } from '../filters/filter-engine.service';
 import { parseCriteriaJson } from '../filters/filter-criteria';
 import type { NormalizedMarketEvent } from '../events/normalized-event';
-import { mrktTelegramGiftUrl } from '../lib/mrkt-telegram-link';
+import { giftTelegramDisplayUrl } from '../lib/mrkt-telegram-link';
 import { BotService } from '../bot/bot.service';
 import { MetricsService } from '../metrics/metrics.service';
 
@@ -104,8 +104,8 @@ export class AlertsService {
   private formatListingAlert(e: NormalizedMarketEvent, sniperScore: number): string {
     const discount = e.below_floor_percent != null ? `${e.below_floor_percent.toFixed(1)}% below floor` : 'n/a';
     const rarity = e.rarity_rank != null ? `#${e.rarity_rank}` : 'n/a';
-    const giftLink = mrktTelegramGiftUrl(e);
-    const linkBlock = giftLink != null ? `Open gift: ${giftLink}\n\n` : '';
+    const giftLink = giftTelegramDisplayUrl(e);
+    const linkBlock = giftLink != null ? `${giftLink}\n\n` : '';
     const serialLine =
       e.beautiful_label != null && e.beautiful_label.length > 0
         ? `Serial pattern: ${e.beautiful_label}\n`
@@ -126,8 +126,8 @@ export class AlertsService {
   }
 
   private formatBeautifulAlert(e: NormalizedMarketEvent): string {
-    const link = mrktTelegramGiftUrl(e);
-    const tail = link != null ? `\n\nOpen: ${link}` : '';
+    const link = giftTelegramDisplayUrl(e);
+    const tail = link != null ? `\n\n${link}` : '';
     return (
       `🔥 Beautiful serial\n\n` +
       `Gift: ${e.gift_name}\n` +

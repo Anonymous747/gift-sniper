@@ -16,7 +16,7 @@ async function bootstrap() {
   }
   app.enableCors({
     origin: corsOrigins,
-    methods: ['GET', 'HEAD', 'OPTIONS'],
+    methods: ['GET', 'HEAD', 'POST', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'X-Telegram-Init-Data'],
   });
   app.useWebSocketAdapter(new IoAdapter(app));

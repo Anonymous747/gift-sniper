@@ -5,8 +5,12 @@ import type { FilterCriteria } from './filter-criteria';
 @Injectable()
 export class FilterEngineService {
   matches(criteria: FilterCriteria, event: NormalizedMarketEvent): boolean {
-    if (event.event_type !== 'listing') {
-      return false;
+    const tab = criteria.alertTab ?? 'listing';
+    if (tab === 'listing' && event.event_type !== 'listing') return false;
+    if (tab === 'sale' && event.event_type !== 'sale') return false;
+
+    if (criteria.giftSerial != null) {
+      if (event.serial_number == null || event.serial_number !== criteria.giftSerial) return false;
     }
     if (criteria.markets?.length && !criteria.markets.includes(event.market)) {
       return false;

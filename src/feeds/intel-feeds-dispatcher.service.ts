@@ -5,7 +5,7 @@ import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { PrismaService } from '../prisma/prisma.service';
 import { BotService } from '../bot/bot.service';
 import type { NormalizedMarketEvent } from '../events/normalized-event';
-import { mrktTelegramGiftUrl } from '../lib/mrkt-telegram-link';
+import { giftTelegramDisplayUrl } from '../lib/mrkt-telegram-link';
 import { parseFeedRecipe, recipeMatchesListing, type FeedRecipe } from './feed-recipes';
 import type { ArbitrageOpportunity } from '../intelligence/arbitrage-engine.service';
 
@@ -169,8 +169,8 @@ export class IntelFeedsDispatcherService implements OnModuleInit {
   ): string {
     const discount =
       event.below_floor_percent != null ? `${event.below_floor_percent.toFixed(1)}% below floor` : 'n/a';
-    const link = mrktTelegramGiftUrl(event);
-    const linkLine = link != null ? `\nOpen: ${link}` : '';
+    const link = giftTelegramDisplayUrl(event);
+    const linkLine = link != null ? `\n${link}` : '';
     return (
       `⚡ ${feedTitle}\n` +
       `(${recipe})\n\n` +

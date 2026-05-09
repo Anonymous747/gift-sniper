@@ -84,7 +84,10 @@ export class BotService implements OnModuleDestroy, OnModuleInit {
       this.logger.debug(`Bot disabled; would send: ${text.slice(0, 80)}…`);
       return;
     }
-    await this.bot.api.sendMessage(telegramId, text, { parse_mode: undefined });
+    await this.bot.api.sendMessage(telegramId, text, {
+      parse_mode: undefined,
+      link_preview_options: { is_disabled: true },
+    });
   }
 
   /** Post to a Telegram channel / supergroup where the bot is admin (same bot token). */
@@ -326,6 +329,7 @@ export class BotService implements OnModuleDestroy, OnModuleInit {
         belowFloorPercentMin: pct,
         minPriceTon: Number.isFinite(minTon!) ? minTon : undefined,
         maxPriceTon: Number.isFinite(maxTon!) ? maxTon : undefined,
+        alertTab: 'listing',
       };
       const first = await this.prisma.userFilter.findFirst({
         where: { userId: user.id },
@@ -377,6 +381,7 @@ export class BotService implements OnModuleDestroy, OnModuleInit {
               criteria: {
                 markets: ['mrkt'],
                 belowFloorPercentMin: 5,
+                alertTab: 'listing',
               } satisfies FilterCriteria,
             },
           },
@@ -396,6 +401,7 @@ export class BotService implements OnModuleDestroy, OnModuleInit {
             criteria: {
               markets: ['mrkt'],
               belowFloorPercentMin: 5,
+              alertTab: 'listing',
             } satisfies FilterCriteria,
           },
         });

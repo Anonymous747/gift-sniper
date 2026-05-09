@@ -1,6 +1,8 @@
 export type ExternalListing = {
   gift_id: string;
   collection: string;
+  collection_slug?: string;
+  nft_telegram_suffix?: string;
   collection_display?: string;
   gift_name: string;
   serial_number?: number | null;

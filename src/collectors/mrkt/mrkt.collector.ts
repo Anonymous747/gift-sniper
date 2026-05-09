@@ -183,6 +183,8 @@ export class MrktCollector implements OnModuleInit, OnModuleDestroy {
       event_type: 'listing',
       gift_id: item.gift_id,
       collection: item.collection,
+      collection_slug: item.collection_slug,
+      nft_telegram_suffix: item.nft_telegram_suffix,
       collection_display: item.collection_display,
       gift_name: item.gift_name,
       serial_number: item.serial_number ?? null,
