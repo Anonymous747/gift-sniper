@@ -6,6 +6,14 @@ class EnvironmentVariables {
   @IsString()
   TELEGRAM_BOT_TOKEN?: string;
 
+  @IsOptional()
+  @IsString()
+  LOG_TELEGRAM_UPDATES?: string;
+
+  @IsOptional()
+  @IsString()
+  TELEGRAM_DROP_PENDING_UPDATES?: string;
+
   @IsString()
   DATABASE_URL!: string;
 

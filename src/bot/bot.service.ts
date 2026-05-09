@@ -23,24 +23,25 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       return;
     }
     const bot = new Bot(token);
-    let botUsername = '';
     try {
-      const me = await bot.api.getMe();
-      botUsername = me.username ?? '';
-      this.logger.log(`Telegram token OK — bot @${me.username} (id=${me.id})`);
+      // Sets botInfo on the instance; avoids relying only on start()’s deferred init.
+      await bot.init();
+      this.logger.log(`Telegram token OK — bot @${bot.botInfo.username} (id=${bot.botInfo.id})`);
     } catch (err) {
       this.logger.error(
-        `Telegram getMe failed (invalid token, revoked bot, or blocked egress to api.telegram.org): ${
+        `Telegram init/getMe failed (invalid token, revoked bot, or blocked egress to api.telegram.org): ${
           err instanceof Error ? err.message : String(err)
         }`,
       );
       return;
     }
+    const botUsername = bot.botInfo.username ?? '';
     this.bot = bot;
     this.registerHandlers(botUsername);
     // Never await bot.start(): it runs getUpdates forever and would block Nest bootstrap (HTTP + other hooks).
     void this.bot
       .start({
+        drop_pending_updates: this.config.get<string>('TELEGRAM_DROP_PENDING_UPDATES') === '1',
         onStart: (info) =>
           this.logger.log(`Telegram long-polling active @${info.username} (deleteWebhook + getUpdates)`),
       })
@@ -77,16 +78,18 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
    * Telegram Business chats deliver `/start` as business_message — match by text instead.
    */
   private matchStartCommandText(text: string, botUsername: string): boolean {
-    const t = text.trimStart();
-    if (t === '/start' || t.startsWith('/start ')) return true;
+    let t = text.replace(/^\uFEFF/, '').replace(/[\u200B-\u200D\uFEFF]/g, '');
+    t = t.trimStart();
+    const first = (t.split(/\s/)[0] ?? '').split('\n')[0] ?? '';
+    if (first === '/start') return true;
     if (!botUsername) return false;
-    const m = t.match(/^\/start@([A-Za-z0-9_]+)(\s|$)/);
+    const m = first.match(/^\/start@([A-Za-z0-9_]+)$/i);
     return m != null && m[1].toLowerCase() === botUsername.toLowerCase();
   }
 
+  /** Uses `ctx.msg` so business / edited / channel mirrors are covered, not only `ctx.message`. */
   private isStartCommandUpdate(ctx: Context, botUsername: string): boolean {
-    const msg =
-      ctx.message ?? ctx.businessMessage ?? ctx.editedBusinessMessage ?? ctx.editedMessage;
+    const msg = ctx.msg;
     const text = msg && 'text' in msg ? msg.text : undefined;
     if (text == null) return false;
     return this.matchStartCommandText(text, botUsername);
@@ -95,10 +98,19 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
   private registerHandlers(botUsername: string) {
     if (!this.bot) return;
 
+    if (this.config.get<string>('LOG_TELEGRAM_UPDATES') === '1') {
+      this.bot.use(async (ctx, next) => {
+        const u = ctx.update;
+        const keys = Object.keys(u).filter((k) => k !== 'update_id');
+        this.logger.log(`TG update ${u.update_id}: ${keys.join(',')}`);
+        await next();
+      });
+    }
+
     this.bot.filter((ctx) => this.isStartCommandUpdate(ctx, botUsername)).use(async (ctx) => {
       const from = ctx.from;
       if (!from) {
-        await ctx.reply('Open this bot from a private chat (tap “Start” or “Open” here).').catch(() => undefined);
+        await this.safeReply(ctx, 'Open this bot from a private chat (tap “Start” or “Open” here).');
         return;
       }
       const tid = String(from.id);
@@ -139,7 +151,8 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
             },
           });
         }
-        await ctx.reply(
+        await this.safeReply(
+          ctx,
           'Gift Sniper is live.\n\n' +
             'Default alert: MRKT listings ≥5% below floor.\n' +
             'Use /filter below <percent> [minTon] [maxTon] to tune.\n' +
@@ -147,7 +160,8 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         );
       } catch (err) {
         this.logger.error(`/start handler failed: ${err instanceof Error ? err.stack ?? err.message : err}`);
-        await ctx.reply(
+        await this.safeReply(
+          ctx,
           'Could not register you (database error). Check server logs and DATABASE_URL / migrations.',
         );
       }
@@ -253,5 +267,15 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         this.logger.error(`Bot error: ${e instanceof Error ? e.stack ?? e.message : String(e)}`);
       }
     });
+  }
+
+  private async safeReply(ctx: Context, text: string): Promise<void> {
+    try {
+      await ctx.reply(text);
+    } catch (err) {
+      this.logger.error(
+        `ctx.reply failed (chatId=${String(ctx.chatId)}): ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 }
