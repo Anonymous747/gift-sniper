@@ -1,7 +1,6 @@
 import { createHash } from 'crypto';
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { randomInt } from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import { AlertsService } from '../../alerts/alerts.service';
 import { computeSniperScore } from '../../events/sniper-score';
@@ -65,9 +64,10 @@ export class MrktCollector implements OnModuleInit, OnModuleDestroy {
           hint =
             preferFeed && this.mrktApi.isConfigured()
               ? 'GET MRKT_LISTINGS_URL — MRKT_PREFER_HTTP_FEED=1 forces feed over native API'
-              : 'GET MRKT_LISTINGS_URL — set MRKT_TOKEN or MRKT_INIT_DATA to use native API + full traits';
+              : 'GET MRKT_LISTINGS_URL — set MRKT_TOKEN or MRKT_INIT_DATA for native API + full traits';
         } else {
-          hint = 'mock listings (configure MRKT_TOKEN, MRKT_INIT_DATA, or MRKT_LISTINGS_URL)';
+          hint =
+            'idle — set MRKT_TOKEN or MRKT_INIT_DATA (native API) and/or MRKT_LISTINGS_URL; no synthetic listings';
         }
         this.logger.log(`MRKT collector data source: ${mode} — ${hint}`);
       }
@@ -78,7 +78,7 @@ export class MrktCollector implements OnModuleInit, OnModuleDestroy {
         for (const item of listings) {
           if (!this.shouldPublishLive(item)) continue;
           const row = await this.enrichCollectionFromCatalog(item);
-          await this.publishAndMaybeFastAlert(row, { stableEventId: true, mockVelocity: false });
+          await this.publishAndMaybeFastAlert(row, { stableEventId: true });
         }
       } else if (mode === 'api') {
         listings = await this.mrktApi.fetchSaleListings();
@@ -86,12 +86,7 @@ export class MrktCollector implements OnModuleInit, OnModuleDestroy {
         for (const item of listings) {
           if (!this.shouldPublishLive(item)) continue;
           const row = await this.enrichCollectionFromCatalog(item);
-          await this.publishAndMaybeFastAlert(row, { stableEventId: true, mockVelocity: false });
-        }
-      } else {
-        for (const item of this.mockListings()) {
-          const row = await this.enrichCollectionFromCatalog(item);
-          await this.publishAndMaybeFastAlert(row, { stableEventId: false, mockVelocity: true });
+          await this.publishAndMaybeFastAlert(row, { stableEventId: true });
         }
       }
       this.metrics.bumpCollectorPoll(true);
@@ -114,10 +109,7 @@ export class MrktCollector implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async publishAndMaybeFastAlert(
-    item: ExternalListing,
-    opts: { stableEventId: boolean; mockVelocity: boolean },
-  ): Promise<void> {
+  private async publishAndMaybeFastAlert(item: ExternalListing, opts: { stableEventId: boolean }): Promise<void> {
     const norm = this.normalize(item, opts);
     await this.events.publish(norm);
     if (this.config.get<string>('FAST_ALERT_FROM_COLLECTOR') !== '0') {
@@ -129,16 +121,16 @@ export class MrktCollector implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Same as typical MRKT bots: **native API first** (`MRKT_TOKEN` / `MRKT_INIT_DATA` → `/gifts/saling` full `gifts[]`).
-   * HTTP GET `MRKT_LISTINGS_URL` is a fallback only when the API is not configured.
-   * Set `MRKT_PREFER_HTTP_FEED=1` to force the URL feed when both URL and API credentials exist (legacy).
+   * **Native API first** (`MRKT_TOKEN` / `MRKT_INIT_DATA` → `/gifts/saling`).
+   * HTTP GET `MRKT_LISTINGS_URL` when API auth is unset or when `MRKT_PREFER_HTTP_FEED=1`.
+   * No synthetic listings — configure MRKT or an HTTP feed for live data.
    */
-  private resolveMode(): 'url' | 'api' | 'mock' {
+  private resolveMode(): 'url' | 'api' | 'disabled' {
     const preferHttpFeed = this.config.get<string>('MRKT_PREFER_HTTP_FEED')?.trim() === '1';
     if (preferHttpFeed && this.url) return 'url';
     if (this.mrktApi.isConfigured()) return 'api';
     if (this.url) return 'url';
-    return 'mock';
+    return 'disabled';
   }
 
   private shouldPublishLive(item: ExternalListing): boolean {
@@ -174,42 +166,7 @@ export class MrktCollector implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private mockListings(): ExternalListing[] {
-    const collection = ['Sakura', 'Neon', 'Obsidian'][randomInt(0, 3)]!;
-    const serial = randomInt(1, 9999);
-    const floor = 3 + randomInt(0, 80) / 10;
-    const discountChance = randomInt(0, 100);
-    const price =
-      discountChance < 35 ? floor * (0.55 + randomInt(0, 35) / 100) : floor * (0.95 + randomInt(0, 10) / 100);
-    const giftId = `${collection.toLowerCase()}-${serial}`;
-    const models = ['Bite-Size', 'Classic', 'Albino', 'Gold Bar'];
-    const backdrops = ['Battleship Grey', 'Grape', 'Midnight', 'Sky Blue'];
-    const symbols = ['Chili', 'Star', 'Lemon', 'Panda'];
-    return [
-      {
-        gift_id: giftId,
-        collection,
-        gift_name: `${collection} #${serial}`,
-        gift_model: models[randomInt(0, models.length)]!,
-        gift_backdrop: backdrops[randomInt(0, backdrops.length)]!,
-        gift_symbol: symbols[randomInt(0, symbols.length)]!,
-        serial_number: serial,
-        price_ton: Number(price.toFixed(2)),
-        floor_price_collection: Number(floor.toFixed(2)),
-        floor_price_backdrop_model: Number((floor * 1.08).toFixed(2)),
-        floor_price: Number(floor.toFixed(2)),
-        seller_id: 'seller_mock',
-        seller_name: 'mock_seller',
-        rarity_rank: randomInt(1, 500),
-        rarity_score: randomInt(50, 99) / 100,
-      },
-    ];
-  }
-
-  private normalize(
-    item: ExternalListing,
-    opts: { stableEventId: boolean; mockVelocity: boolean },
-  ): NormalizedMarketEvent {
+  private normalize(item: ExternalListing, opts: { stableEventId: boolean }): NormalizedMarketEvent {
     const floor = item.floor_price ?? null;
     const below =
       floor != null && floor > 0 ? Number((((floor - item.price_ton) / floor) * 100).toFixed(2)) : null;
@@ -218,8 +175,6 @@ export class MrktCollector implements OnModuleInit, OnModuleDestroy {
     const event_id = opts.stableEventId
       ? `mrkt:${item.gift_id}:${Math.round(item.price_ton * PRICE_SIG_MULT)}`
       : uuidv4();
-    let velocity: string | undefined;
-    if (opts.mockVelocity && randomInt(0, 10) < 2) velocity = 'high';
     const serialAnalysis = analyzeSerial(item.serial_number ?? null);
     const content_fingerprint = createHash('sha256')
       .update(
@@ -257,7 +212,6 @@ export class MrktCollector implements OnModuleInit, OnModuleDestroy {
       seller_id: item.seller_id ?? null,
       seller_name: item.seller_name ?? null,
       timestamp: Date.now(),
-      velocity,
       content_fingerprint,
       beautiful_serial: serialAnalysis.viral,
       beautiful_label: serialAnalysis.label,

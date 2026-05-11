@@ -6,7 +6,7 @@
 
 ## What it does
 
-1. **Ingest** MRKT sale listings (native `api.tgmrkt.io`, optional HTTP JSON feed, or built-in **mock** data for development).
+1. **Ingest** MRKT sale listings (native `api.tgmrkt.io` or optional HTTP JSON feed); collector stays idle until MRKT auth or `MRKT_LISTINGS_URL` is set.
 2. **Normalize** each listing into a canonical event shape (collection, gift name, price, floor, discount %, rarity hints, seller, etc.).
 3. **Publish** events to a **Redis Stream** so consumers can scale independently.
 4. **Persist** gifts, listings, and events with **Prisma**; compute a **sniper score** for ranking.
@@ -24,7 +24,7 @@ See **[ROADMAP.md](./ROADMAP.md)** for product/engineering priorities and what i
 ```mermaid
 flowchart LR
   subgraph ingest [Ingestion]
-    MRKT[MRKT collector / mock / HTTP feed]
+    MRKT[MRKT collector / HTTP feed]
   end
   subgraph bus [Redis]
     STREAM[(Stream: gifts:events)]
@@ -53,7 +53,7 @@ flowchart LR
 
 | Layer | Responsibility |
 |--------|----------------|
-| **Collectors** | MRKT: native **`POST /gifts/saling`** when `MRKT_TOKEN` or `MRKT_INIT_DATA` is set (full `gifts[]`); optional GET `MRKT_LISTINGS_URL` only as fallback or if `MRKT_PREFER_HTTP_FEED=1`; mock when nothing is configured. |
+| **Collectors** | MRKT: native **`POST /gifts/saling`** when `MRKT_TOKEN` or `MRKT_INIT_DATA` is set (full `gifts[]`); optional GET `MRKT_LISTINGS_URL` only as fallback or if `MRKT_PREFER_HTTP_FEED=1`; **idle** when neither API nor URL is configured (no synthetic listings). |
 | **Events** | Build `NormalizedMarketEvent`, push to Redis stream (`EVENT_STREAM_KEY`). |
 | **Pipeline** | `StreamConsumerService`: XREADGROUP, parse JSON, hand off to ingestion. |
 | **Ingestion** | Upsert `Gift` / `GiftListing`, write `GiftEvent`, trigger alerts. |
@@ -130,7 +130,7 @@ App listens on `PORT` (default **3000**). Telegram polling starts after HTTP bin
 ```bash
 cp .env.example .env
 # Compose overrides DATABASE_URL and REDIS_URL inside the app container.
-# Set TELEGRAM_BOT_TOKEN, MRKT_TOKEN or MRKT_INIT_DATA (or leave MRKT empty for mock).
+# Set TELEGRAM_BOT_TOKEN; set MRKT_TOKEN or MRKT_INIT_DATA (and/or MRKT_LISTINGS_URL) for live MRKT ingestion.
 npm run docker:up
 ```
 
