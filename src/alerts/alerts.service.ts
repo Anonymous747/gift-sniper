@@ -6,7 +6,7 @@ import { RedisService } from '../redis/redis.service';
 import { FilterEngineService } from '../filters/filter-engine.service';
 import { parseCriteriaJson } from '../filters/filter-criteria';
 import type { NormalizedMarketEvent } from '../events/normalized-event';
-import { formatGiftListingTelegramCard, giftSeriesFooterExtraLine } from '../lib/format-gift-listing-card';
+import { formatGiftListingTelegramCard } from '../lib/format-gift-listing-card';
 import { BotService } from '../bot/bot.service';
 import { MetricsService } from '../metrics/metrics.service';
 import { TonUsdRateService } from '../pricing/ton-usd-rate.service';
@@ -36,7 +36,7 @@ export class AlertsService {
     if (event.event_type !== 'listing') return;
 
     const tonUsdRate = await this.tonUsdRateService.getEffectiveRate();
-    const giftLineUrl = await this.giftLinkResolver.displayUrlForListing(event);
+    const giftLineUrl = this.giftLinkResolver.displayUrlForListing(event);
 
     const rows = await this.prisma.userFilter.findMany({
       where: { alertsEnabled: true },
@@ -127,19 +127,16 @@ export class AlertsService {
       sniperScore,
       giftLineUrl,
     });
-    const seriesExtra = giftSeriesFooterExtraLine(e);
-    const seriesBlock = seriesExtra != null ? `\n\n${seriesExtra}` : '';
-    return `${card}${seriesBlock}${serialLine}`;
+    return `${card}${serialLine}`;
   }
 
   private formatBeautifulAlert(e: NormalizedMarketEvent, giftLineUrl: string | null): string {
     const tail = giftLineUrl != null ? `\n\n${giftLineUrl}` : '';
-    const seriesExtra = giftSeriesFooterExtraLine(e);
-    const seriesBlock = seriesExtra != null ? `\n${seriesExtra}` : '';
     return (
       `🔥 Beautiful serial\n\n` +
+      `Gift series: ${e.collection?.trim() || 'n/a'}\n` +
       `Gift: ${e.gift_name}\n` +
-      `Pattern: ${e.beautiful_label ?? 'special'}${seriesBlock}${tail}`
+      `Pattern: ${e.beautiful_label ?? 'special'}${tail}`
     );
   }
 }

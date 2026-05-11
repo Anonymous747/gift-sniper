@@ -5,7 +5,7 @@ import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { PrismaService } from '../prisma/prisma.service';
 import { BotService } from '../bot/bot.service';
 import type { NormalizedMarketEvent } from '../events/normalized-event';
-import { formatGiftListingTelegramCard, giftSeriesFooterExtraLine } from '../lib/format-gift-listing-card';
+import { formatGiftListingTelegramCard } from '../lib/format-gift-listing-card';
 import { parseFeedRecipe, recipeMatchesListing, type FeedRecipe } from './feed-recipes';
 import type { ArbitrageOpportunity } from '../intelligence/arbitrage-engine.service';
 import { TonUsdRateService } from '../pricing/ton-usd-rate.service';
@@ -94,7 +94,7 @@ export class IntelFeedsDispatcherService implements OnModuleInit {
   async dispatchListing(event: NormalizedMarketEvent, sniperScore: number): Promise<void> {
     if (!this.postingEnabled) return;
     const tonUsdRate = await this.tonUsdRateService.getEffectiveRate();
-    const giftLineUrl = await this.giftLinkResolver.displayUrlForListing(event);
+    const giftLineUrl = this.giftLinkResolver.displayUrlForListing(event);
     const channels = await this.prisma.intelFeedChannel.findMany({ where: { enabled: true } });
     const minDecimal = (ch: ChannelRow) =>
       ch.minSniperScore != null ? Number(ch.minSniperScore) : null;
@@ -184,9 +184,7 @@ export class IntelFeedsDispatcherService implements OnModuleInit {
       sniperScore,
       giftLineUrl,
     });
-    const seriesExtra = giftSeriesFooterExtraLine(event);
-    const seriesBlock = seriesExtra != null ? `\n\n${seriesExtra}` : '';
-    return `${card}${seriesBlock}`;
+    return card;
   }
 
   private formatArbitragePost(p: ArbitrageOpportunity): string {

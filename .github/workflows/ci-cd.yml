@@ -144,8 +144,15 @@ jobs:
             fi
             dcompose version
             dcompose pull postgres redis 2>/dev/null || true
-            if ! dcompose up -d --build; then
-              echo "ERROR: docker compose up --build failed. Recent service logs:"
+            # Explicit `build app` so the Nest image always matches the freshly reset `origin/main`,
+            # then `up -d` recreates the container from that image digest (avoid “old image stuck” ambiguity).
+            echo "==> docker compose build app (git $(git rev-parse --short HEAD))"
+            if ! dcompose build app; then
+              echo "ERROR: docker compose build app failed"
+              exit 1
+            fi
+            if ! dcompose up -d; then
+              echo "ERROR: docker compose up failed. Recent service logs:"
               dcompose logs --tail=120 2>/dev/null || true
               exit 1
             fi

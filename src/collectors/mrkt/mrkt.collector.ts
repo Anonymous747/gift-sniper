@@ -22,6 +22,7 @@ export class MrktCollector implements OnModuleInit, OnModuleDestroy {
   private timer: ReturnType<typeof setInterval> | null = null;
   /** Last published sale signature per MRKT gift id (nanoTON rounded) — avoids stream spam on unchanged polls */
   private readonly lastSaleSig = new Map<string, number>();
+  private loggedCollectorMode = false;
 
   constructor(
     private readonly config: ConfigService,
@@ -49,6 +50,22 @@ export class MrktCollector implements OnModuleInit, OnModuleDestroy {
   private async pollOnce(): Promise<void> {
     try {
       const mode = this.resolveMode();
+      if (!this.loggedCollectorMode) {
+        this.loggedCollectorMode = true;
+        const preferFeed = this.config.get<string>('MRKT_PREFER_HTTP_FEED')?.trim() === '1';
+        let hint: string;
+        if (mode === 'api') {
+          hint = 'native POST /gifts/saling (full gifts[] — same surface as MRKT mini app)';
+        } else if (mode === 'url') {
+          hint =
+            preferFeed && this.mrktApi.isConfigured()
+              ? 'GET MRKT_LISTINGS_URL — MRKT_PREFER_HTTP_FEED=1 forces feed over native API'
+              : 'GET MRKT_LISTINGS_URL — set MRKT_TOKEN or MRKT_INIT_DATA to use native API + full traits';
+        } else {
+          hint = 'mock listings (configure MRKT_TOKEN, MRKT_INIT_DATA, or MRKT_LISTINGS_URL)';
+        }
+        this.logger.log(`MRKT collector data source: ${mode} — ${hint}`);
+      }
       let listings: ExternalListing[] = [];
       if (mode === 'url' && this.url) {
         listings = await this.fetchRemote(this.url);
@@ -90,9 +107,16 @@ export class MrktCollector implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /**
+   * Same as typical MRKT bots: **native API first** (`MRKT_TOKEN` / `MRKT_INIT_DATA` → `/gifts/saling` full `gifts[]`).
+   * HTTP GET `MRKT_LISTINGS_URL` is a fallback only when the API is not configured.
+   * Set `MRKT_PREFER_HTTP_FEED=1` to force the URL feed when both URL and API credentials exist (legacy).
+   */
   private resolveMode(): 'url' | 'api' | 'mock' {
-    if (this.url) return 'url';
+    const preferHttpFeed = this.config.get<string>('MRKT_PREFER_HTTP_FEED')?.trim() === '1';
+    if (preferHttpFeed && this.url) return 'url';
     if (this.mrktApi.isConfigured()) return 'api';
+    if (this.url) return 'url';
     return 'mock';
   }
 

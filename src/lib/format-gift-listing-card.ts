@@ -19,19 +19,9 @@ function tonDisplay(ton: number | null | undefined): string {
   return ton.toFixed(1);
 }
 
-/**
- * MRKT `collectionName` / filter `collectionNames` are **Telegram gift series names**
- * (Obsidian, Sakura, …), i.e. the same tier as `t.me/nft/Obsidian-8090` — not a separate
- * Fragment “collection” taxonomy. Only show a footer line when it adds info beyond `gift_name`.
- */
-export function giftSeriesFooterExtraLine(event: NormalizedMarketEvent): string | null {
-  const series = event.collection?.trim();
-  if (!series) return null;
-  const gift = event.gift_name?.trim() ?? '';
-  if (gift.length > 0 && gift.toLowerCase().startsWith(series.toLowerCase())) {
-    return null;
-  }
-  return `Gift series: ${series}`;
+function nzLabel(value: string | null | undefined): string {
+  const t = value?.trim();
+  return t && t.length > 0 ? t : 'n/a';
 }
 
 /**
@@ -42,7 +32,10 @@ export function formatGiftListingTelegramCard(
   opts: FormatGiftListingCardOpts,
 ): string {
   const link = opts.giftLineUrl ?? giftTelegramDisplayUrl(event);
-  const giftLine = link != null ? `${event.gift_name} (${link})` : event.gift_name;
+  const giftLine =
+    link != null
+      ? `${event.gift_name} (${link})`
+      : `${event.gift_name} (Market link: n/a)`;
 
   const discount =
     event.below_floor_percent != null && Number.isFinite(event.below_floor_percent)
@@ -52,12 +45,11 @@ export function formatGiftListingTelegramCard(
     event.rarity_rank != null && Number.isFinite(event.rarity_rank) ? `#${event.rarity_rank}` : 'n/a';
 
   const rows: string[] = [];
-  const model = event.gift_model?.trim();
-  if (model) rows.push(`Model: ${model}`);
-  const symbol = event.gift_symbol?.trim();
-  if (symbol) rows.push(`Symbol: ${symbol}`);
-  const backdrop = event.gift_backdrop?.trim();
-  if (backdrop) rows.push(`Backdrop: ${backdrop}`);
+  /** MRKT gift “series” (filter `collectionNames`) — Telegram Star Gift lineup, distinct from Traits. */
+  rows.push(`Gift series: ${nzLabel(event.collection)}`);
+  rows.push(`Model: ${nzLabel(event.gift_model)}`);
+  rows.push(`Symbol: ${nzLabel(event.gift_symbol)}`);
+  rows.push(`Backdrop: ${nzLabel(event.gift_backdrop)}`);
 
   const ton = event.price_ton;
   let priceLine = `Price: ${tonDisplay(ton)} TON`;
@@ -72,17 +64,11 @@ export function formatGiftListingTelegramCard(
   rows.push(`Rarity rank: ${rarity}`);
 
   const sn = opts.sniperScore;
-  if (sn != null && Number.isFinite(sn)) {
-    rows.push(`Sniper score: ${sn.toFixed(2)}`);
-  }
+  rows.push(`Sniper score: ${sn != null && Number.isFinite(sn) ? sn.toFixed(2) : 'n/a'}`);
 
   if (event.market === 'mrkt') {
     const mrktUrl = mrktTelegramGiftUrl(event);
-    if (mrktUrl) {
-      rows.push(`Listed on MRKT (${mrktUrl})`);
-    } else {
-      rows.push('Listed on MRKT');
-    }
+    rows.push(`Listed on MRKT (${mrktUrl ?? 'n/a'})`);
   } else {
     rows.push(`Market: ${event.market.toUpperCase()}`);
   }

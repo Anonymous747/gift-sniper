@@ -24,6 +24,11 @@ class EnvironmentVariables {
   @IsString()
   MRKT_LISTINGS_URL?: string;
 
+  /** When `1`, collector uses GET `MRKT_LISTINGS_URL` even if native MRKT API credentials are set. */
+  @IsOptional()
+  @IsString()
+  MRKT_PREFER_HTTP_FEED?: string;
+
   /** Direct MRKT session token (from Web Telegram Network tab or auth flow). */
   @IsOptional()
   @IsString()

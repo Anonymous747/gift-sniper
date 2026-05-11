@@ -53,7 +53,7 @@ flowchart LR
 
 | Layer | Responsibility |
 |--------|----------------|
-| **Collectors** | MRKT: `MrktApiService` (auth + `/gifts/saling`), `MrktCollector` (poll + map to `ExternalListing`), optional GET `MRKT_LISTINGS_URL`, mock listings when nothing is configured. |
+| **Collectors** | MRKT: native **`POST /gifts/saling`** when `MRKT_TOKEN` or `MRKT_INIT_DATA` is set (full `gifts[]`); optional GET `MRKT_LISTINGS_URL` only as fallback or if `MRKT_PREFER_HTTP_FEED=1`; mock when nothing is configured. |
 | **Events** | Build `NormalizedMarketEvent`, push to Redis stream (`EVENT_STREAM_KEY`). |
 | **Pipeline** | `StreamConsumerService`: XREADGROUP, parse JSON, hand off to ingestion. |
 | **Ingestion** | Upsert `Gift` / `GiftListing`, write `GiftEvent`, trigger alerts. |
@@ -161,9 +161,10 @@ Copy from `.env.example`. Values are validated at boot (`src/config/env.validati
 | `PORT` | No | Port inside container (compose sets **3000**). |
 | `LOG_TELEGRAM_UPDATES` | No | Set to `1` to log each incoming update (debug). |
 | `TELEGRAM_DROP_PENDING_UPDATES` | No | Set to `1` to drop pending updates once on `deleteWebhook` (recovery from duplicate pollers). |
-| `MRKT_LISTINGS_URL` | No | If set, collector uses **GET** JSON instead of native MRKT API. |
+| `MRKT_LISTINGS_URL` | No | **Fallback** GET JSON when native MRKT auth is **not** set. If `MRKT_TOKEN` / `MRKT_INIT_DATA` is set, native API is used unless `MRKT_PREFER_HTTP_FEED=1`. |
+| `MRKT_PREFER_HTTP_FEED` | No | Set to `1` to force `MRKT_LISTINGS_URL` over native API (legacy; slim feeds → missing traits). |
 | `MRKT_API_BASE` | No | Default `https://api.tgmrkt.io/api/v1`. |
-| `MRKT_TOKEN` / `MRKT_INIT_DATA` | One for native API | Session auth for `/gifts/saling`. |
+| `MRKT_TOKEN` / `MRKT_INIT_DATA` | One for native API | Session for **`POST /gifts/saling`** (full objects, same as other MRKT bots). |
 | `MRKT_SALING_JSON` | No | JSON merged into saling POST body. |
 | `MRKT_SALING_MAX_PAGES` | No | Pagination cap (default 3). |
 | `MRKT_POLL_MS` | No | Poll interval (default 2000). |
