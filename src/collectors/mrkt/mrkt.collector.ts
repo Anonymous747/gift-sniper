@@ -161,11 +161,17 @@ export class MrktCollector implements OnModuleInit, OnModuleDestroy {
     const price =
       discountChance < 35 ? floor * (0.55 + randomInt(0, 35) / 100) : floor * (0.95 + randomInt(0, 10) / 100);
     const giftId = `${collection.toLowerCase()}-${serial}`;
+    const models = ['Bite-Size', 'Classic', 'Albino', 'Gold Bar'];
+    const backdrops = ['Battleship Grey', 'Grape', 'Midnight', 'Sky Blue'];
+    const symbols = ['Chili', 'Star', 'Lemon', 'Panda'];
     return [
       {
         gift_id: giftId,
         collection,
         gift_name: `${collection} #${serial}`,
+        gift_model: models[randomInt(0, models.length)]!,
+        gift_backdrop: backdrops[randomInt(0, backdrops.length)]!,
+        gift_symbol: symbols[randomInt(0, symbols.length)]!,
         serial_number: serial,
         price_ton: Number(price.toFixed(2)),
         floor_price_collection: Number(floor.toFixed(2)),

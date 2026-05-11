@@ -6,11 +6,33 @@ function asRecord(v: unknown): Record<string, unknown> | null {
   return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
 }
 
-/** MRKT sometimes nests the payload under `gift` / `Gift`. Top-level keys win on conflict. */
+/**
+ * MRKT often returns `{ …listing fields…, gift: { …full collectible… } }`. Spreading `…raw` alone can
+ * leave `model` / `backdrop` / `symbol` as `null` on the wrapper while the nested gift still has traits.
+ */
 function mergedGiftRow(raw: Record<string, unknown>): Record<string, unknown> {
   const inner = asRecord(raw.gift) ?? asRecord(raw.Gift);
   if (!inner) return raw;
-  return { ...inner, ...raw };
+
+  const merged: Record<string, unknown> = { ...inner, ...raw };
+
+  for (const [k, innerVal] of Object.entries(inner)) {
+    if (k === 'gift' || k === 'Gift') continue;
+    const mergedVal = merged[k];
+    const emptyMerged =
+      mergedVal === undefined ||
+      mergedVal === null ||
+      (typeof mergedVal === 'string' && mergedVal.trim() === '');
+    const innerHas =
+      innerVal !== undefined &&
+      innerVal !== null &&
+      !(typeof innerVal === 'string' && innerVal.trim() === '');
+    if (emptyMerged && innerHas) merged[k] = innerVal;
+  }
+
+  delete merged.gift;
+  delete merged.Gift;
+  return merged;
 }
 
 /** String from a primitive, or from common nested shapes `{ name, title, … }`. */
@@ -18,7 +40,20 @@ function strFromUnknown(v: unknown): string {
   if (typeof v === 'string' && v.trim()) return v.trim();
   const o = asRecord(v);
   if (!o) return '';
-  for (const k of ['name', 'Name', 'title', 'Title', 'value', 'displayName', 'label', 'slug', 'Slug']) {
+  for (const k of [
+    'name',
+    'Name',
+    'title',
+    'Title',
+    'value',
+    'Value',
+    'displayName',
+    'displayTitle',
+    'label',
+    'slug',
+    'Slug',
+    'localizedName',
+  ]) {
     const t = o[k];
     if (typeof t === 'string' && t.trim()) return t.trim();
   }
@@ -92,6 +127,74 @@ function nanoToTon(n: number | null): number | null {
   return n / NANO;
 }
 
+/** Extra trait tuples some MRKT payloads put on `gift` or the listing envelope. */
+function traitsFromTuples(row: Record<string, unknown>): {
+  model: string | null;
+  backdrop: string | null;
+  symbol: string | null;
+} {
+  let model: string | null = null;
+  let backdrop: string | null = null;
+  let symbol: string | null = null;
+
+  const arrayKeys = [
+    'traits',
+    'Traits',
+    'giftTraits',
+    'GiftTraits',
+    'propertyValues',
+    'PropertyValues',
+    'extendedTraits',
+    'attributes',
+    'Attributes',
+  ];
+
+  for (const ak of arrayKeys) {
+    const v = row[ak];
+    if (!Array.isArray(v)) continue;
+    for (const item of v) {
+      const o = asRecord(item);
+      if (!o) continue;
+      const labelRaw =
+        pickStr(o, 'traitType', 'TraitType', 'type', 'Type', 'name', 'Name', 'key', 'Key', 'kind', 'Kind') ??
+        '';
+      const label = labelRaw.trim().toLowerCase();
+      const val =
+        pickStrLoose(
+          o,
+          'value',
+          'Value',
+          'title',
+          'Title',
+          'displayTitle',
+          'traitValue',
+          'TraitValue',
+          'trait_name',
+          'traitName',
+        ) || '';
+      if (!label || !val.trim()) continue;
+      if (
+        label.includes('model') ||
+        label.includes('variant') ||
+        label === 'gift model' ||
+        label === 'visual model'
+      ) {
+        model ??= val.trim();
+      } else if (label.includes('backdrop') || label.includes('background')) {
+        backdrop ??= val.trim();
+      } else if (
+        label.includes('symbol') ||
+        label.includes('pattern') ||
+        label.includes('узор')
+      ) {
+        symbol ??= val.trim();
+      }
+    }
+  }
+
+  return { model, backdrop, symbol };
+}
+
 /**
  * Maps a single MRKT `/gifts/saling` gift object (camelCase per tgmrkt API) to our collector row.
  */
@@ -139,61 +242,126 @@ export function mapMrktGiftToExternalListing(raw: Record<string, unknown>): Exte
     pickStrLoose(row, 'name', 'Name').trim() ||
     (number != null ? `${collection} #${number}` : `${collection} · ${id.slice(0, 8)}`);
 
-  /** Flat keys match amrkt `Gift` pydantic aliases (modelName, modelTitle, …). */
+  const tupleTraits = traitsFromTuples(row);
+
+  /** Flat keys match amrkt / MRKT client surfaces (camelCase + PascalCase + nested blobs). */
   const giftModel =
     pickTrait(
       row,
-      'modelName',
-      'model_name',
       'modelTitle',
       'model_title',
+      'modelName',
+      'model_name',
       'giftModel',
       'gift_model',
+      'giftModelTitle',
+      'GiftModelTitle',
+      'giftModelName',
+      'GiftModelName',
       'visualModel',
       'visual_model',
+      'visualModelTitle',
+      'ModelName',
+      'ModelTitle',
+      'GiftModelDisplay',
       'model',
       'Model',
     ) ??
-    pickTraitFromParents(row, ['model', 'Model', 'giftModel', 'GiftModel'], 'modelName', 'modelTitle', 'title', 'name') ??
-    null;
+    pickTraitFromParents(
+      row,
+      [
+        'model',
+        'Model',
+        'giftModel',
+        'GiftModel',
+        'gift_model',
+        'visualModel',
+        'VisualModel',
+        'giftModelDto',
+      ],
+      'modelName',
+      'modelTitle',
+      'title',
+      'name',
+      'displayTitle',
+      'ModelName',
+      'ModelTitle',
+    ) ??
+    tupleTraits.model;
 
   const giftBackdrop =
     pickTrait(
       row,
+      'backdropTitle',
+      'backdrop_title',
       'backdropName',
       'backdrop_name',
       'BackdropName',
-      'backdropTitle',
-      'backdrop_title',
+      'BackdropTitle',
       'giftBackdrop',
       'gift_backdrop',
+      'giftBackdropName',
+      'GiftBackdropName',
       'backdrop',
       'Backdrop',
       'backgroundName',
       'background_name',
       'background',
       'Background',
+      'BackgroundName',
     ) ??
-    pickTraitFromParents(row, ['backdrop', 'Backdrop', 'giftBackdrop', 'background', 'Background'], 'backdropName', 'backdropTitle', 'title', 'name') ??
-    null;
+    pickTraitFromParents(
+      row,
+      [
+        'backdrop',
+        'Backdrop',
+        'giftBackdrop',
+        'GiftBackdrop',
+        'background',
+        'Background',
+      ],
+      'backdropName',
+      'backdropTitle',
+      'title',
+      'name',
+      'BackdropName',
+      'BackdropTitle',
+      'BackgroundName',
+    ) ??
+    tupleTraits.backdrop;
 
   const giftSymbol =
     pickTrait(
       row,
+      'symbolTitle',
+      'symbol_title',
       'symbolName',
       'symbol_name',
       'SymbolName',
-      'symbolTitle',
-      'symbol_title',
+      'SymbolTitle',
       'giftSymbol',
       'gift_symbol',
-      'symbol',
-      'Symbol',
+      'giftPattern',
       'patternName',
       'pattern_name',
+      'patternTitle',
+      'PatternName',
+      'PatternTitle',
+      'symbol',
+      'Symbol',
     ) ??
-    pickTraitFromParents(row, ['symbol', 'Symbol', 'giftSymbol', 'pattern', 'Pattern'], 'symbolName', 'symbolTitle', 'title', 'name') ??
-    null;
+    pickTraitFromParents(
+      row,
+      ['symbol', 'Symbol', 'giftSymbol', 'GiftSymbol', 'pattern', 'Pattern', 'giftPattern'],
+      'symbolName',
+      'symbolTitle',
+      'patternName',
+      'title',
+      'name',
+      'SymbolName',
+      'PatternName',
+    ) ??
+    tupleTraits.symbol;
 
   const floorNanoCollection =
     pickNum(row, 'floorPriceNanoTONsByCollection', 'floorPriceNanoTonsByCollection') ??
