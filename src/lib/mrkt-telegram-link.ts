@@ -89,41 +89,22 @@ function parseNftTelegramSuffix(raw: string): string | null {
 }
 
 /**
- * When MRKT `gift_id` is `{collectionSlug}-{serial}` and serial matches `serial_number`
- * (when set), build the Telegram collectible path segment (PascalCase key + serial).
- * May still 404 in Telegram if MRKT’s slug does not match Fragment’s canonical id.
- */
-function deriveTelegramNftPathFromMrktGiftId(giftId: string, serialNumber: number | null): string | null {
-  const gid = giftId.trim();
-  const m = gid.match(MRKT_SLUG_SERIAL_ID);
-  if (!m) return null;
-  const serialFromId = Number(m[2]);
-  if (!Number.isFinite(serialFromId)) return null;
-  if (serialNumber != null && serialNumber !== serialFromId) return null;
-  const normalized = normalizeTelegramNftPathSegment(gid);
-  if (!NFT_PATH_SEGMENT.test(normalized)) return null;
-  return normalized;
-}
-
-/**
  * Telegram collectible gift link (`https://t.me/nft/…`).
  *
- * Order: MRKT `nftTelegramSuffix` (and aliases) when valid; else derive from `gift_id`
- * when it matches `{slug}-{serial}` and serial aligns with `serial_number`.
+ * Only when MRKT sends an explicit telegram suffix: Telegram’s canonical NFT path often
+ * **does not** match `{slug}-{serial}` derived from `gift_id` (e.g. MRKT `neon-2681` vs
+ * Fragment `NeonSign-2681`). Guessing from `gift_id` produces broken links, so we never do it.
  */
 export function telegramNftCollectibleUrl(event: NftLinkEvent): string | null {
   if (event.market !== 'mrkt' || !event.gift_id?.trim()) return null;
 
   const suffixRaw = event.nft_telegram_suffix?.trim();
-  if (suffixRaw) {
-    const parsed = parseNftTelegramSuffix(suffixRaw);
-    if (parsed && nftSuffixSerialMatchesSegment(parsed, event.serial_number)) {
-      return `https://t.me/nft/${parsed}`;
-    }
-  }
+  if (!suffixRaw) return null;
 
-  const derived = deriveTelegramNftPathFromMrktGiftId(event.gift_id, event.serial_number);
-  return derived != null ? `https://t.me/nft/${derived}` : null;
+  const parsed = parseNftTelegramSuffix(suffixRaw);
+  if (!parsed || !nftSuffixSerialMatchesSegment(parsed, event.serial_number)) return null;
+
+  return `https://t.me/nft/${parsed}`;
 }
 
 /**
