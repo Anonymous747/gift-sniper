@@ -10,6 +10,7 @@ import type { NormalizedMarketEvent } from '../../events/normalized-event';
 import { analyzeSerial } from '../../lib/beautiful-serial';
 import { MetricsService } from '../../metrics/metrics.service';
 import { MrktApiService } from './mrkt-api.service';
+import { MrktPublicCatalogService } from './mrkt-public-catalog.service';
 import type { ExternalListing, FeedResponse } from './mrkt.types';
 
 const PRICE_SIG_MULT = 1_000_000_000;
@@ -23,6 +24,8 @@ export class MrktCollector implements OnModuleInit, OnModuleDestroy {
   /** Last published sale signature per MRKT gift id (nanoTON rounded) — avoids stream spam on unchanged polls */
   private readonly lastSaleSig = new Map<string, number>();
   private loggedCollectorMode = false;
+  /** When true (default), normalize gift series label via public GET `/gifts/collections`. */
+  private readonly catalogEnrich: boolean;
 
   constructor(
     private readonly config: ConfigService,
@@ -30,9 +33,11 @@ export class MrktCollector implements OnModuleInit, OnModuleDestroy {
     private readonly mrktApi: MrktApiService,
     private readonly alerts: AlertsService,
     private readonly metrics: MetricsService,
+    private readonly mrktCatalog: MrktPublicCatalogService,
   ) {
     this.pollMs = this.config.get<number>('MRKT_POLL_MS') ?? 2000;
     this.url = this.config.get<string>('MRKT_LISTINGS_URL') || undefined;
+    this.catalogEnrich = this.config.get<string>('MRKT_CATALOG_ENRICH')?.trim() !== '0';
   }
 
   onModuleInit() {
@@ -72,24 +77,40 @@ export class MrktCollector implements OnModuleInit, OnModuleDestroy {
         this.pruneSnapshot(listings);
         for (const item of listings) {
           if (!this.shouldPublishLive(item)) continue;
-          await this.publishAndMaybeFastAlert(item, { stableEventId: true, mockVelocity: false });
+          const row = await this.enrichCollectionFromCatalog(item);
+          await this.publishAndMaybeFastAlert(row, { stableEventId: true, mockVelocity: false });
         }
       } else if (mode === 'api') {
         listings = await this.mrktApi.fetchSaleListings();
         this.pruneSnapshot(listings);
         for (const item of listings) {
           if (!this.shouldPublishLive(item)) continue;
-          await this.publishAndMaybeFastAlert(item, { stableEventId: true, mockVelocity: false });
+          const row = await this.enrichCollectionFromCatalog(item);
+          await this.publishAndMaybeFastAlert(row, { stableEventId: true, mockVelocity: false });
         }
       } else {
         for (const item of this.mockListings()) {
-          await this.publishAndMaybeFastAlert(item, { stableEventId: false, mockVelocity: true });
+          const row = await this.enrichCollectionFromCatalog(item);
+          await this.publishAndMaybeFastAlert(row, { stableEventId: false, mockVelocity: true });
         }
       }
       this.metrics.bumpCollectorPoll(true);
     } catch (err) {
       this.metrics.bumpCollectorPoll(false);
       this.logger.warn(`MRKT poll failed: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+
+  /** Prefer MRKT mini-app catalog titles over raw `/gifts/saling` strings (spacing, casing, aliases). */
+  private async enrichCollectionFromCatalog(item: ExternalListing): Promise<ExternalListing> {
+    if (!this.catalogEnrich) return item;
+    try {
+      const canon = await this.mrktCatalog.resolveCanonicalCollectionDisplay(item);
+      if (!canon) return item;
+      return { ...item, collection_display: canon };
+    } catch (err) {
+      this.logger.debug(`Catalog enrich skipped: ${err instanceof Error ? err.message : err}`);
+      return item;
     }
   }
 
@@ -220,6 +241,7 @@ export class MrktCollector implements OnModuleInit, OnModuleDestroy {
       collection_slug: item.collection_slug,
       nft_telegram_suffix: item.nft_telegram_suffix,
       collection_display: item.collection_display,
+      gifts_collection_id: item.gifts_collection_id,
       gift_name: item.gift_name,
       gift_model: item.gift_model ?? null,
       gift_backdrop: item.gift_backdrop ?? null,

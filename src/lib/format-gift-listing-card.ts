@@ -3,7 +3,8 @@ import {
   giftTelegramDisplayUrl,
   mrktPrimaryListingDisplayUrl,
   mrktTelegramGiftUrl,
-  mrktValidatedCollectibleNftUrl,
+  portalsMarketListingUrl,
+  telegramCollectibleNftUrlBestEffort,
 } from './mrkt-telegram-link';
 
 export type ListingCardLocale = 'ru' | 'en';
@@ -39,7 +40,7 @@ function priceSuffixTonUsd(ton: number | null | undefined, rate: number | null |
 
 function buildMrktOpeningLine(event: NormalizedMarketEvent, locale: ListingCardLocale, tonUsd: string): string {
   const name = event.gift_name.trim();
-  const nft = mrktValidatedCollectibleNftUrl(event);
+  const nft = telegramCollectibleNftUrlBestEffort(event);
   const app = mrktTelegramGiftUrl(event);
   const price = `${tonDisplay(event.price_ton)} TON${tonUsd}`;
 
@@ -52,16 +53,33 @@ function buildMrktOpeningLine(event: NormalizedMarketEvent, locale: ListingCardL
   return `${nameLinked} on MRKT${mrktParen} for ${price}`;
 }
 
+/** Same structure as reference bots: `Name (t.me/nft/…) на Portals (t.me/portals/market?…) за …`. */
+function buildPortalsOpeningLine(event: NormalizedMarketEvent, locale: ListingCardLocale, tonUsd: string): string {
+  const name = event.gift_name.trim();
+  const nft = telegramCollectibleNftUrlBestEffort(event);
+  const portal = portalsMarketListingUrl(event);
+  const price = `${tonDisplay(event.price_ton)} TON${tonUsd}`;
+  const nameLinked = nft != null ? `${name} (${nft})` : name;
+  const portalParen = portal != null ? ` (${portal})` : '';
+
+  if (locale === 'ru') {
+    return `${nameLinked} на Portals${portalParen} за ${price}`;
+  }
+  return `${nameLinked} on Portals${portalParen} for ${price}`;
+}
+
 function buildGenericOpeningLine(event: NormalizedMarketEvent, locale: ListingCardLocale, tonUsd: string): string {
   const name = event.gift_name.trim();
-  const url = giftTelegramDisplayUrl(event);
-  const nameLinked = url != null ? `${name} (${url})` : name;
+  const nft = telegramCollectibleNftUrlBestEffort(event);
+  const venueUrl = giftTelegramDisplayUrl(event);
   const price = `${tonDisplay(event.price_ton)} TON${tonUsd}`;
-  const venue = event.market.toUpperCase();
+  const nameLinked = nft != null ? `${name} (${nft})` : name;
+  const venueParen = venueUrl != null ? ` (${venueUrl})` : '';
+  const venueLabel = event.market.toUpperCase();
   if (locale === 'ru') {
-    return `${nameLinked} на ${venue} за ${price}`;
+    return `${nameLinked} на ${venueLabel}${venueParen} за ${price}`;
   }
-  return `${nameLinked} on ${venue} for ${price}`;
+  return `${nameLinked} on ${venueLabel}${venueParen} for ${price}`;
 }
 
 /**
@@ -77,7 +95,9 @@ export function formatGiftListingTelegramCard(
   const opening =
     event.market === 'mrkt'
       ? buildMrktOpeningLine(event, locale, tonUsd)
-      : buildGenericOpeningLine(event, locale, tonUsd);
+      : event.market === 'portals'
+        ? buildPortalsOpeningLine(event, locale, tonUsd)
+        : buildGenericOpeningLine(event, locale, tonUsd);
 
   const floorGiftLabel = txt(locale, 'Флор гифта', 'Gift-series floor');
   const floorModelLabel = txt(locale, 'Флор модели', 'Model / backdrop floor');
@@ -106,11 +126,12 @@ export function formatGiftListingTelegramCard(
       ? `Ранг по редкости: ${rank}`
       : `Rarity rank: ${rank}`;
 
-  /** MRKT tap-through: keep mini-app listing link even when the collectible NFT URL is primary elsewhere. */
   const listingTap =
     event.market === 'mrkt'
       ? mrktTelegramGiftUrl(event)
-      : giftTelegramDisplayUrl(event) ?? mrktPrimaryListingDisplayUrl(event);
+      : event.market === 'portals'
+        ? portalsMarketListingUrl(event)
+        : giftTelegramDisplayUrl(event) ?? mrktPrimaryListingDisplayUrl(event);
   const linkLine =
     listingTap != null
       ? `${txt(locale, 'Ссылка', 'Link')} (${listingTap})`
@@ -130,10 +151,17 @@ export function formatGiftListingTelegramCard(
   lines.push(txt(locale, 'Серия гифта', 'Gift series') + `: ${seriesLabel}`);
 
   lines.push('', txt(locale, 'Последние владельцы:', 'Recent holders:'));
-  lines.push(txt(locale,
-    '— пока недоступно в потоке листингов MRKT',
-    '— not available in MRKT listing feed (ownership history APIs not wired yet)',
-  ));
+  lines.push(
+    txt(
+      locale,
+      event.market === 'portals'
+        ? '— пока недоступно в потоке листингов Portals'
+        : '— пока недоступно в потоке листингов MRKT',
+      event.market === 'portals'
+        ? '— not available in Portals listing feed (ownership history APIs not wired yet)'
+        : '— not available in MRKT listing feed (ownership history APIs not wired yet)',
+    ),
+  );
 
   lines.push('', `${floorGiftLabel}: ${floorGift} TON`);
   lines.push(`${floorModelLabel}: ${floorModel} TON`);

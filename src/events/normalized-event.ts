@@ -17,6 +17,8 @@ export interface NormalizedMarketEvent {
   collection_slug?: string | null;
   /** Optional `XmasStocking-219810` segment for https://t.me/nft/… when API supplies it. */
   nft_telegram_suffix?: string | null;
+  /** MRKT catalog id — used to resolve canonical series title via GET `/gifts/collections`. */
+  gifts_collection_id?: string | null;
   collection_display?: string;
   gift_name: string;
   /** MRKT physical/visual model when collector provides it (e.g. Gold Bar). */

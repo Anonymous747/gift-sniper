@@ -55,6 +55,11 @@ class EnvironmentVariables {
   @Max(86_400_000)
   MRKT_CATALOG_CACHE_MS?: number;
 
+  /** When `0`, skip catalog-based canonical series titles for listings. */
+  @IsOptional()
+  @IsString()
+  MRKT_CATALOG_ENRICH?: string;
+
   /** Optional JSON merged into default POST /gifts/saling body (camelCase keys). */
   @IsOptional()
   @IsString()

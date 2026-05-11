@@ -108,14 +108,19 @@ function parseNftTelegramSuffix(raw: string): string | null {
   return normalizeTelegramNftPathSegment(seg);
 }
 
-/** Parses MRKT telegram suffix → normalized `Key-serial`; does not validate key against Telegram. */
-export function parseMrktNftTelegramPathSegment(event: NftLinkEvent): string | null {
-  if (event.market !== 'mrkt') return null;
+/** Parses `nft_telegram_suffix` → normalized `Key-serial` when shape + serial match (any market). */
+function parseListingNftSuffixSegment(event: NftLinkEvent): string | null {
   const suffixRaw = event.nft_telegram_suffix?.trim();
   if (!suffixRaw) return null;
   const parsed = parseNftTelegramSuffix(suffixRaw);
   if (!parsed || !nftSuffixSerialMatchesSegment(parsed, event.serial_number)) return null;
   return parsed;
+}
+
+/** Parses MRKT telegram suffix → normalized `Key-serial`; MRKT-only wrapper for legacy callers. */
+export function parseMrktNftTelegramPathSegment(event: NftLinkEvent): string | null {
+  if (event.market !== 'mrkt') return null;
+  return parseListingNftSuffixSegment(event);
 }
 
 /** Telegram Star Gift key derived from MRKT naming for **this listing** (`collection_display` preferred). */
@@ -132,12 +137,11 @@ export function listingTelegramStarGiftKey(event: NftLinkEvent): string {
 }
 
 /**
- * `https://t.me/nft/…` only when MRKT suffix parses and gift key matches listing series
- * (same rules as other MRKT-native clients; blocks bogus `Neon-*` vs `NeonSign-*`).
+ * `https://t.me/nft/…` when `nft_telegram_suffix` parses and key matches listing series
+ * (blocks bogus `Neon-*` vs `NeonSign-*`). Any market with that field.
  */
-export function mrktValidatedCollectibleNftUrl(event: NftLinkEvent): string | null {
-  if (event.market !== 'mrkt') return null;
-  const seg = parseMrktNftTelegramPathSegment(event);
+export function collectibleNftUrlFromValidatedSuffix(event: NftLinkEvent): string | null {
+  const seg = parseListingNftSuffixSegment(event);
   if (!seg) return null;
   const suffixKey = telegramStarGiftKeyFromPathSegment(seg);
   const listingKey = listingTelegramStarGiftKey(event);
@@ -145,18 +149,67 @@ export function mrktValidatedCollectibleNftUrl(event: NftLinkEvent): string | nu
   return `https://t.me/nft/${seg}`;
 }
 
-/** Single “best” showcase URL: validated NFT if any, else MRKT mini-app. */
-export function mrktPrimaryListingDisplayUrl(event: NftLinkEvent): string | null {
-  return mrktValidatedCollectibleNftUrl(event) ?? mrktTelegramGiftUrl(event as MrktLinkEvent);
+/**
+ * `https://t.me/nft/…` only when MRKT suffix parses and gift key matches listing series (MRKT-only export).
+ */
+export function mrktValidatedCollectibleNftUrl(event: NftLinkEvent): string | null {
+  if (event.market !== 'mrkt') return null;
+  return collectibleNftUrlFromValidatedSuffix(event);
 }
 
 /**
- * Telegram collectible gift link (`https://t.me/nft/…`) from MRKT suffix only (parsed).
+ * Derives collectible URL when API omits `nftTelegramSuffix` but `gift_id` is `{slug}-{serial}` and the slug
+ * resolves to the same Star Gift key as `collection` / `collection_display` (same safety as suffix match).
  */
+export function deriveCollectibleNftUrlFromGiftId(event: NftLinkEvent): string | null {
+  if (event.market !== 'mrkt' && event.market !== 'portals' && event.market !== 'tonnel') return null;
+  if (event.serial_number == null || !Number.isFinite(event.serial_number)) return null;
+  const listingKey = listingTelegramStarGiftKey(event);
+  if (!listingKey) return null;
+
+  const gid = event.gift_id?.trim();
+  if (!gid || !MRKT_SLUG_SERIAL_ID.test(gid)) return null;
+  const m = gid.match(MRKT_SLUG_SERIAL_ID)!;
+  const serial = Number(m[2]);
+  if (serial !== event.serial_number) return null;
+
+  const slugHyphen = m[1];
+  const keyFromGiftId = starGiftSlugKeyFromMrktTitle(slugHyphen.replace(/-/g, ' '));
+  if (!keyFromGiftId || keyFromGiftId !== listingKey) return null;
+
+  const segment = normalizeTelegramNftPathSegment(`${listingKey}-${event.serial_number}`);
+  if (!NFT_PATH_SEGMENT.test(segment)) return null;
+  return `https://t.me/nft/${segment}`;
+}
+
+/**
+ * NFT card URL: validated suffix first; if API sent a non-empty suffix that failed validation, do not guess.
+ * Otherwise derive from `gift_id` + listing key when possible (MRKT / Portals / Tonnel slug-serial ids).
+ */
+export function telegramCollectibleNftUrlBestEffort(event: NftLinkEvent): string | null {
+  const strict = collectibleNftUrlFromValidatedSuffix(event);
+  if (strict) return strict;
+  if (event.nft_telegram_suffix?.trim()) return null;
+  return deriveCollectibleNftUrlFromGiftId(event);
+}
+
+/** Single “best” showcase URL: NFT (suffix or derived) if any, else MRKT mini-app. */
+export function mrktPrimaryListingDisplayUrl(event: NftLinkEvent): string | null {
+  if (event.market !== 'mrkt') return null;
+  return telegramCollectibleNftUrlBestEffort(event) ?? mrktTelegramGiftUrl(event as MrktLinkEvent);
+}
+
+/**
+ * Portals deep link (`gift_id` is the `startapp` payload from listing feeds).
+ * @see https://t.me/portals/market?startapp=…
+ */
+export function portalsMarketListingUrl(event: Pick<NormalizedMarketEvent, 'market' | 'gift_id'>): string | null {
+  if (event.market !== 'portals' || !event.gift_id?.trim()) return null;
+  return `https://t.me/portals/market?startapp=${encodeURIComponent(event.gift_id.trim())}`;
+}
+
 export function telegramNftCollectibleUrl(event: NftLinkEvent): string | null {
-  if (!event.gift_id?.trim()) return null;
-  const seg = parseMrktNftTelegramPathSegment(event);
-  return seg != null ? `https://t.me/nft/${seg}` : null;
+  return telegramCollectibleNftUrlBestEffort(event);
 }
 
 /**
@@ -193,5 +246,8 @@ export function giftTelegramDisplayUrl(event: NftLinkEvent): string | null {
   if (event.market === 'mrkt') {
     return mrktTelegramGiftUrl(event as MrktLinkEvent);
   }
-  return telegramNftCollectibleUrl(event) ?? mrktTelegramGiftUrl(event as MrktLinkEvent);
+  if (event.market === 'portals') {
+    return portalsMarketListingUrl(event);
+  }
+  return telegramCollectibleNftUrlBestEffort(event) ?? mrktTelegramGiftUrl(event as MrktLinkEvent);
 }

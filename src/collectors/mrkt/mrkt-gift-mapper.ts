@@ -30,9 +30,42 @@ function mergedGiftRow(raw: Record<string, unknown>): Record<string, unknown> {
     if (emptyMerged && innerHas) merged[k] = innerVal;
   }
 
+  /**
+   * Wrapper often carries filter/search context; nested `gift` is authoritative for **which series** this
+   * NFT belongs to (otherwise envelope fields can overwrite and show the wrong **Серия гифта** line).
+   */
+  const innerCollTitle = pickInnerString(inner, 'collectionTitle', 'collection_title');
+  if (innerCollTitle) {
+    merged.collectionTitle = innerCollTitle;
+    merged.collection_title = innerCollTitle;
+  }
+  const innerCollName = pickInnerString(inner, 'collectionName', 'collection_name');
+  if (innerCollName) {
+    merged.collectionName = innerCollName;
+    merged.collection_name = innerCollName;
+  }
+  const innerSlug = pickInnerString(inner, 'collectionSlug', 'collection_slug');
+  if (innerSlug) {
+    merged.collectionSlug = innerSlug;
+    merged.collection_slug = innerSlug;
+  }
+  const innerGc = pickInnerString(inner, 'giftsCollectionId', 'gifts_collection_id');
+  if (innerGc) {
+    merged.giftsCollectionId = innerGc;
+    merged.gifts_collection_id = innerGc;
+  }
+
   delete merged.gift;
   delete merged.Gift;
   return merged;
+}
+
+function pickInnerString(o: Record<string, unknown>, ...keys: string[]): string {
+  for (const k of keys) {
+    const v = o[k];
+    if (typeof v === 'string' && v.trim()) return v.trim();
+  }
+  return '';
 }
 
 /** String from a primitive, or from common nested shapes `{ name, title, … }`. */
@@ -215,6 +248,9 @@ export function mapMrktGiftToExternalListing(raw: Record<string, unknown>): Exte
     'Unknown';
   const collectionSlug =
     pickStr(row, 'collectionSlug', 'collection_slug') || undefined;
+  const giftsCollectionId =
+    pickStrLoose(row, 'giftsCollectionId', 'gifts_collection_id', 'collectionId', 'collection_id').trim() ||
+    undefined;
   const nftSuffixRaw = pickStrLoose(
     row,
     'nftTelegramSuffix',
@@ -394,6 +430,7 @@ export function mapMrktGiftToExternalListing(raw: Record<string, unknown>): Exte
     gift_id: id,
     collection,
     collection_slug: collectionSlug,
+    gifts_collection_id: giftsCollectionId,
     nft_telegram_suffix: nftSuffixRaw || undefined,
     collection_display: pickStrLoose(row, 'collectionTitle', 'collection_title').trim() || undefined,
     gift_name: giftName,

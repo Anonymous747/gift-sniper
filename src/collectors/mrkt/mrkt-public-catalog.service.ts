@@ -1,12 +1,18 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { starGiftSlugKeyFromMrktTitle } from '../../lib/mrkt-telegram-link';
+import type { ExternalListing } from './mrkt.types';
 
 const DEFAULT_API_BASE = 'https://api.tgmrkt.io/api/v1';
 const DEFAULT_CDN_BASE = 'https://cdn.tgmrkt.io';
 
 export type TelegramGiftCatalogRow = {
-  /** Value stored in filters / sent to MRKT models API (human collection title). */
+  /** Canonical display title from MRKT `GET /gifts/collections` (`title`). */
   collectionTitle: string;
+  /** Second label from API (`name`) — used for matching only. */
+  collectionName?: string;
+  /** Stable id when API sends it — authoritative match for series. */
+  collectionId?: string;
   stickerUrl: string | null;
   isHidden: boolean;
 };
@@ -72,14 +78,22 @@ export class MrktPublicCatalogService {
       if (!item || typeof item !== 'object') continue;
       const o = item as Record<string, unknown>;
       const title = typeof o.title === 'string' ? o.title.trim() : '';
-      if (!title) continue;
-      const key = title.toLowerCase();
-      if (seen.has(key)) continue;
-      seen.add(key);
+      const name = typeof o.name === 'string' ? o.name.trim() : '';
+      const canonicalTitle = title || name;
+      if (!canonicalTitle) continue;
+
+      const collectionId = pickCatalogId(o) ?? undefined;
+
+      const dedupeKey = canonicalTitle.toLowerCase();
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+
       const thumb =
         typeof o.modelStickerThumbnailKey === 'string' ? o.modelStickerThumbnailKey.trim() : '';
       rows.push({
-        collectionTitle: title,
+        collectionTitle: canonicalTitle,
+        collectionName: name || title || undefined,
+        collectionId,
         stickerUrl: thumb ? this.stickerUrl(thumb) : null,
         isHidden: o.isHidden === true,
       });
@@ -88,6 +102,59 @@ export class MrktPublicCatalogService {
     rows.sort((a, b) => a.collectionTitle.localeCompare(b.collectionTitle));
     this.collectionsCache = { at: now, data: rows };
     return this.filterCatalog(rows, includeHidden);
+  }
+
+  /**
+   * Maps listing payload strings to **canonical** `title` from MRKT's public catalog (same source as the mini app).
+   * Uses id match first, then case-insensitive title/name, then Star Gift key equality.
+   */
+  async resolveCanonicalCollectionDisplay(
+    listing: Pick<ExternalListing, 'collection' | 'collection_display' | 'collection_slug'> & {
+      gifts_collection_id?: string | null;
+    },
+  ): Promise<string | null> {
+    try {
+      const rows = await this.getGiftCollections({ includeHidden: true });
+      const gid = listing.gifts_collection_id?.trim();
+      if (gid) {
+        const byId = rows.find((r) => r.collectionId === gid);
+        if (byId) return byId.collectionTitle;
+      }
+
+      const candidates: string[] = [];
+      const push = (s: string | undefined | null) => {
+        const t = s?.trim();
+        if (t) candidates.push(t);
+      };
+      push(listing.collection_display);
+      push(listing.collection);
+      if (listing.collection_slug?.trim()) {
+        push(listing.collection_slug.trim().replace(/-/g, ' '));
+      }
+
+      if (candidates.length === 0) return null;
+
+      const lowered = new Set(candidates.map((c) => c.toLowerCase()));
+
+      for (const r of rows) {
+        if (lowered.has(r.collectionTitle.toLowerCase())) return r.collectionTitle;
+        const nm = r.collectionName?.trim();
+        if (nm && lowered.has(nm.toLowerCase())) return r.collectionTitle;
+      }
+
+      const candidateKeys = candidates.map((c) => starGiftSlugKeyFromMrktTitle(c)).filter(Boolean);
+      for (const r of rows) {
+        const rk = starGiftSlugKeyFromMrktTitle(r.collectionTitle);
+        if (candidateKeys.some((ck) => ck === rk)) return r.collectionTitle;
+        const rn = r.collectionName ? starGiftSlugKeyFromMrktTitle(r.collectionName) : '';
+        if (rn && candidateKeys.some((ck) => ck === rn)) return r.collectionTitle;
+      }
+
+      return null;
+    } catch (err) {
+      this.logger.debug(`resolveCanonicalCollectionDisplay: ${err instanceof Error ? err.message : err}`);
+      return null;
+    }
   }
 
   private filterCatalog(rows: TelegramGiftCatalogRow[], includeHidden: boolean): TelegramGiftCatalogRow[] {
@@ -151,4 +218,13 @@ export class MrktPublicCatalogService {
     this.modelsCache.set(ck, { at: now, data: out });
     return out;
   }
+}
+
+function pickCatalogId(o: Record<string, unknown>): string | null {
+  for (const k of ['id', 'Id', 'giftsCollectionId', 'gifts_collection_id', 'collectionId', 'collection_id']) {
+    const v = o[k];
+    if (typeof v === 'string' && v.trim()) return v.trim();
+    if (typeof v === 'number' && Number.isFinite(v)) return String(v);
+  }
+  return null;
 }
