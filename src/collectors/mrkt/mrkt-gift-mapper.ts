@@ -76,7 +76,11 @@ export function mapMrktGiftToExternalListing(raw: Record<string, unknown>): Exte
   const priceTon = saleNano / NANO;
   if (!Number.isFinite(priceTon) || priceTon <= 0) return null;
 
-  const collection = pickStr(row, 'collectionName', 'collection_name') || 'Unknown';
+  /** MRKT “collection” = gift series name (filter `collectionNames`), same namespace as Telegram NFT slug. */
+  const collection =
+    pickStrLoose(row, 'collectionTitle', 'collection_title').trim() ||
+    pickStr(row, 'collectionName', 'collection_name').trim() ||
+    'Unknown';
   const collectionSlug =
     pickStr(row, 'collectionSlug', 'collection_slug') || undefined;
   const nftSuffixRaw = pickStrLoose(
@@ -167,7 +171,7 @@ export function mapMrktGiftToExternalListing(raw: Record<string, unknown>): Exte
     collection,
     collection_slug: collectionSlug,
     nft_telegram_suffix: nftSuffixRaw || undefined,
-    collection_display: pickStr(row, 'collectionTitle', 'collection_title') || undefined,
+    collection_display: pickStrLoose(row, 'collectionTitle', 'collection_title').trim() || undefined,
     gift_name: giftName,
     gift_model: giftModel || undefined,
     gift_backdrop: giftBackdrop || undefined,

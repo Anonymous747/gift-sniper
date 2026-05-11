@@ -15,6 +15,21 @@ function tonDisplay(ton: number | null | undefined): string {
 }
 
 /**
+ * MRKT `collectionName` / filter `collectionNames` are **Telegram gift series names**
+ * (Obsidian, Sakura, …), i.e. the same tier as `t.me/nft/Obsidian-8090` — not a separate
+ * Fragment “collection” taxonomy. Only show a footer line when it adds info beyond `gift_name`.
+ */
+export function giftSeriesFooterExtraLine(event: NormalizedMarketEvent): string | null {
+  const series = event.collection?.trim();
+  if (!series) return null;
+  const gift = event.gift_name?.trim() ?? '';
+  if (gift.length > 0 && gift.toLowerCase().startsWith(series.toLowerCase())) {
+    return null;
+  }
+  return `Gift series: ${series}`;
+}
+
+/**
  * Telegram-friendly “gift card” layout (tree lines), for listings — not a sale headline.
  */
 export function formatGiftListingTelegramCard(

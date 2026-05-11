@@ -5,7 +5,7 @@ import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { PrismaService } from '../prisma/prisma.service';
 import { BotService } from '../bot/bot.service';
 import type { NormalizedMarketEvent } from '../events/normalized-event';
-import { formatGiftListingTelegramCard } from '../lib/format-gift-listing-card';
+import { formatGiftListingTelegramCard, giftSeriesFooterExtraLine } from '../lib/format-gift-listing-card';
 import { parseFeedRecipe, recipeMatchesListing, type FeedRecipe } from './feed-recipes';
 import type { ArbitrageOpportunity } from '../intelligence/arbitrage-engine.service';
 import { TonUsdRateService } from '../pricing/ton-usd-rate.service';
@@ -178,7 +178,9 @@ export class IntelFeedsDispatcherService implements OnModuleInit {
       tonUsdRate,
       sniperScore,
     });
-    return `${card}\n\nCollection: ${event.collection}`;
+    const seriesExtra = giftSeriesFooterExtraLine(event);
+    const seriesBlock = seriesExtra != null ? `\n\n${seriesExtra}` : '';
+    return `${card}${seriesBlock}`;
   }
 
   private formatArbitragePost(p: ArbitrageOpportunity): string {

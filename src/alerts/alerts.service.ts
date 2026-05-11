@@ -7,7 +7,7 @@ import { FilterEngineService } from '../filters/filter-engine.service';
 import { parseCriteriaJson } from '../filters/filter-criteria';
 import type { NormalizedMarketEvent } from '../events/normalized-event';
 import { giftTelegramDisplayUrl } from '../lib/mrkt-telegram-link';
-import { formatGiftListingTelegramCard } from '../lib/format-gift-listing-card';
+import { formatGiftListingTelegramCard, giftSeriesFooterExtraLine } from '../lib/format-gift-listing-card';
 import { BotService } from '../bot/bot.service';
 import { MetricsService } from '../metrics/metrics.service';
 import { TonUsdRateService } from '../pricing/ton-usd-rate.service';
@@ -120,17 +120,20 @@ export class AlertsService {
       tonUsdRate,
       sniperScore,
     });
-    return `${card}\n\nCollection: ${e.collection}${serialLine}`;
+    const seriesExtra = giftSeriesFooterExtraLine(e);
+    const seriesBlock = seriesExtra != null ? `\n\n${seriesExtra}` : '';
+    return `${card}${seriesBlock}${serialLine}`;
   }
 
   private formatBeautifulAlert(e: NormalizedMarketEvent): string {
     const link = giftTelegramDisplayUrl(e);
     const tail = link != null ? `\n\n${link}` : '';
+    const seriesExtra = giftSeriesFooterExtraLine(e);
+    const seriesBlock = seriesExtra != null ? `\n${seriesExtra}` : '';
     return (
       `🔥 Beautiful serial\n\n` +
       `Gift: ${e.gift_name}\n` +
-      `Pattern: ${e.beautiful_label ?? 'special'}\n` +
-      `Collection: ${e.collection}${tail}`
+      `Pattern: ${e.beautiful_label ?? 'special'}${seriesBlock}${tail}`
     );
   }
 }
