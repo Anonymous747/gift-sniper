@@ -174,7 +174,7 @@ Copy from `.env.example`. Values are validated at boot (`src/config/env.validati
 | `FREE_TIER_ALERT_DELAY_MS` | No | Delay before sending to `free` tier users (default 0). |
 | `ADMIN_TOKEN` | No | Enables `GET /admin/stats` + `POST /admin/replay` when set (use header `X-Admin-Token`). |
 | `FAST_ALERT_FROM_COLLECTOR` | No | Default on; set to `0` to disable collector-side Telegram alerts (ingestion-only). |
-| `ALERTS_FROM_FAST_PATH_ONLY` | No | Set to `1` to skip ingestion-side alerts (collector fast-path only). **Requires** `FAST_ALERT_FROM_COLLECTOR` not disabled, or you will get no alerts. |
+| `ALERTS_FROM_FAST_PATH_ONLY` | No | Set to `1` to skip ingestion-side alerts when **collector** fast-path Telegram is enabled (`FAST_ALERT_FROM_COLLECTOR` not `0`). If fast-path alerts are off, ingestion **always** sends Telegram (this flag is ignored). |
 | `TONNEL_ENABLED` / `PORTALS_ENABLED` | No | Set to `1` to log stub collector warnings until APIs are wired. |
 
 `npm run env:sync` merges new keys from `.env.example` into `.env` without overwriting values.
@@ -210,13 +210,14 @@ Secrets: `SSH_HOST`, `SSH_USER`, `SSH_PRIVATE_KEY`, optional `SERVER_DOTENV_B64`
 
 ## Operations
 
-- **Health:** `GET /health` → `{ ok, database, telegramTokenConfigured, telegramLongPolling }`.
+- **Health:** `GET /health` → `{ ok, database, telegramTokenConfigured, telegramLongPolling, mrktNativeAuthConfigured, mrktHttpFeedConfigured, adminTokenConfigured }` (booleans only — compare with your local `.env` to confirm the server picked up the same *classes* of secrets; values are never returned).
 - **Metrics:** `GET /metrics` (Prometheus text), `GET /metrics/json` (snapshot counters & latency summaries).
 - **Admin (optional):** set `ADMIN_TOKEN` in `.env`, then `GET /admin/stats` or `POST /admin/replay` with header `X-Admin-Token: <ADMIN_TOKEN>`. Replay body: `{ "max": 50 }` (replays newest entries from the Redis stream through ingestion; safe with existing `eventUuid` dedupe).
 - **Realtime:** Socket.IO server (default namespace) emits `listing` payloads `{ event, sniperScore, ingestedAt }` after each successful listing persist.
 - **Mini App host (`game.*`):** TLS + nginx are not managed by this repo. After DNS points at the server, run **`sudo bash /opt/gift-sniper/scripts/bootstrap-game-subdomain-as-root.sh`** once as **root** (cloud console). That installs a limited sudo rule for `deploy` and runs **`scripts/provision-game-subdomain.sh`** (nginx + Let’s Encrypt for `game.foryou.quest` → `127.0.0.1:3010`). To undo earlier SSH lockdown only (restore **`PermitRootLogin yes`**, drop **`deploy-provision-game`** sudoers): **`scripts/revert-ssh-hardening-as-root.sh`** as root.
 - **Logs (Compose):** `npm run docker:logs` or `docker compose logs -f app`.
-- **Common production issues:** Empty `TELEGRAM_BOT_TOKEN` in server `.env`; another process long-polling the same token (409 / no updates); Redis DI requires **`redis.constants.ts`** import path (do not import `REDIS_CLIENT` only from `redis.module.ts` alongside `RedisService` — circular).
+- **Verify server `.env`:** Deploy dir is **`/opt/gift-sniper`** — `.env` must sit **next to** `docker-compose.yml` (same as locally). Git never ships `.env`; optional **`SERVER_DOTENV_B64`** GitHub Action secret overwrites it each deploy. After deploy, `curl -s https://<host>/health | jq` should mirror your expectations (e.g. `telegramTokenConfigured: true`, MRKT flags matching whether you set token vs URL feed).
+- **Common production issues:** Empty `TELEGRAM_BOT_TOKEN` in server `.env`; Docker Compose previously overriding the bot token — fixed: secrets load **only** via `env_file`. Another process long-polling the same token (409 / no updates); Redis DI requires **`redis.constants.ts`** import path (do not import `REDIS_CLIENT` only from `redis.module.ts` alongside `RedisService` — circular).
 
 ---
 

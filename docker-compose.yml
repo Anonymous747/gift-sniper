@@ -42,8 +42,8 @@ services:
       DATABASE_URL: postgresql://gift:gift@postgres:5432/gift_sniper?schema=public
       REDIS_URL: redis://redis:6379
       PORT: "3000"
-      # Also pass through compose interpolation so the token is never dropped if env_file parsing glitches.
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      # Secrets (TELEGRAM_BOT_TOKEN, MRKT_*, etc.) come only from `env_file` above — do not set them here:
+      # `environment:` overrides `env_file`, and `${VAR:-}` can inject empty values if Compose interpolation fails.
     depends_on:
       postgres:
         condition: service_healthy

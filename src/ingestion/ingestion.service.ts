@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { GiftEventType, Prisma } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { PrismaService } from '../prisma/prisma.service';
@@ -13,8 +13,9 @@ import { ArbitrageEngineService } from '../intelligence/arbitrage-engine.service
 import { IntelFeedsDispatcherService } from '../feeds/intel-feeds-dispatcher.service';
 
 @Injectable()
-export class IngestionService {
+export class IngestionService implements OnModuleInit {
   private readonly logger = new Logger(IngestionService.name);
+  /** When true, skip `notifyMatchingUsers` here — collector fast-path sends Telegram instead. */
   private readonly alertsFromFastPathOnly: boolean;
 
   constructor(
@@ -25,9 +26,22 @@ export class IngestionService {
     private readonly collectionAnalytics: CollectionAnalyticsService,
     private readonly arbitrage: ArbitrageEngineService,
     private readonly intelFeeds: IntelFeedsDispatcherService,
-    config: ConfigService,
+    private readonly config: ConfigService,
   ) {
-    this.alertsFromFastPathOnly = config.get<string>('ALERTS_FROM_FAST_PATH_ONLY') === '1';
+    const fastPathOff = this.config.get<string>('FAST_ALERT_FROM_COLLECTOR')?.trim() === '0';
+    const wantFastPathOnlyAlerts =
+      !fastPathOff && this.config.get<string>('ALERTS_FROM_FAST_PATH_ONLY')?.trim() === '1';
+    this.alertsFromFastPathOnly = wantFastPathOnlyAlerts;
+  }
+
+  onModuleInit(): void {
+    const fpOff = this.config.get<string>('FAST_ALERT_FROM_COLLECTOR')?.trim() === '0';
+    const fpOnly = this.config.get<string>('ALERTS_FROM_FAST_PATH_ONLY')?.trim() === '1';
+    if (fpOff && fpOnly) {
+      this.logger.warn(
+        'FAST_ALERT_FROM_COLLECTOR=0 disables collector Telegram alerts; ingestion alerts are enabled (ALERTS_FROM_FAST_PATH_ONLY ignored in this mode).',
+      );
+    }
   }
 
   async handleNormalizedEvent(raw: unknown): Promise<void> {

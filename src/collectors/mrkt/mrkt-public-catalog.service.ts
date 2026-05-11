@@ -58,9 +58,17 @@ export class MrktPublicCatalogService {
     }
 
     const url = `${this.apiBase()}/gifts/collections`;
-    const res = await fetch(url, {
-      headers: { Accept: 'application/json' },
-    });
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), 12_000);
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        headers: { Accept: 'application/json' },
+        signal: ctrl.signal,
+      });
+    } finally {
+      clearTimeout(to);
+    }
     if (!res.ok) {
       const text = await res.text().catch(() => '');
       this.logger.warn(`MRKT catalog GET ${res.status}: ${text.slice(0, 160)}`);

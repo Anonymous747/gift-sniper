@@ -40,6 +40,11 @@ export class MrktCollector implements OnModuleInit, OnModuleDestroy {
   }
 
   onModuleInit() {
+    if (this.catalogEnrich) {
+      void this.mrktCatalog.getGiftCollections({ includeHidden: true }).catch((err) =>
+        this.logger.debug(`MRKT catalog warmup failed (non-fatal): ${err instanceof Error ? err.message : err}`),
+      );
+    }
     const run = () => {
       void this.pollOnce();
     };
@@ -69,7 +74,13 @@ export class MrktCollector implements OnModuleInit, OnModuleDestroy {
           hint =
             'idle — set MRKT_TOKEN or MRKT_INIT_DATA (native API) and/or MRKT_LISTINGS_URL; no synthetic listings';
         }
-        this.logger.log(`MRKT collector data source: ${mode} — ${hint}`);
+        const logLine = `MRKT collector data source: ${mode} — ${hint}`;
+        if (mode === 'disabled') {
+          this.logger.warn(`${logLine} (Telegram bot will not receive MRKT listings until MRKT is configured.)`);
+          this.logMrktDisabledHints();
+        } else {
+          this.logger.log(logLine);
+        }
       }
       let listings: ExternalListing[] = [];
       if (mode === 'url' && this.url) {
@@ -125,6 +136,26 @@ export class MrktCollector implements OnModuleInit, OnModuleDestroy {
    * HTTP GET `MRKT_LISTINGS_URL` when API auth is unset or when `MRKT_PREFER_HTTP_FEED=1`.
    * No synthetic listings — configure MRKT or an HTTP feed for live data.
    */
+  /** Keys exist but values empty — common misconfig from template `.env` (`MRKT_TOKEN=""`). */
+  private logMrktDisabledHints(): void {
+    const rawTok = this.config.get<string>('MRKT_TOKEN');
+    const rawInit = this.config.get<string>('MRKT_INIT_DATA');
+    const rawUrl = this.config.get<string>('MRKT_LISTINGS_URL');
+    if (rawTok !== undefined && rawTok.trim().length === 0) {
+      this.logger.warn(
+        'MRKT_TOKEN is present but empty — native POST /gifts/saling will not run. Set a real token (Telegram Web → MRKT mini app → Network → api.tgmrkt.io /auth or refresh MRKT_TOKEN).',
+      );
+    }
+    if (rawInit !== undefined && rawInit.trim().length === 0) {
+      this.logger.warn('MRKT_INIT_DATA is present but empty — MRKT auth via init_data disabled.');
+    }
+    if (rawUrl !== undefined && rawUrl.trim().length === 0) {
+      this.logger.warn(
+        'MRKT_LISTINGS_URL is present but empty — optional HTTP JSON feed disabled (unset the key or set a URL).',
+      );
+    }
+  }
+
   private resolveMode(): 'url' | 'api' | 'disabled' {
     const preferHttpFeed = this.config.get<string>('MRKT_PREFER_HTTP_FEED')?.trim() === '1';
     if (preferHttpFeed && this.url) return 'url';
