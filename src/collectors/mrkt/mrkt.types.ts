@@ -10,6 +10,11 @@ export type ExternalListing = {
   gift_symbol?: string | null;
   serial_number?: number | null;
   price_ton: number;
+  /** `floorPriceNanoTONsByCollection` — gift-series floor. */
+  floor_price_collection?: number | null;
+  /** `floorPriceNanoTONsByBackdropModel` — model+backdrop floor MRKT shows as “model floor”. */
+  floor_price_backdrop_model?: number | null;
+  /** Discount baseline: collection floor, else backdrop/model floor (backward compat). */
   floor_price?: number | null;
   seller_id?: string | null;
   seller_name?: string | null;

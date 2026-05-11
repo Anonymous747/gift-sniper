@@ -195,10 +195,18 @@ export function mapMrktGiftToExternalListing(raw: Record<string, unknown>): Exte
     pickTraitFromParents(row, ['symbol', 'Symbol', 'giftSymbol', 'pattern', 'Pattern'], 'symbolName', 'symbolTitle', 'title', 'name') ??
     null;
 
-  const floorNano =
-    pickNum(row, 'floorPriceNanoTONsByCollection', 'floorPriceNanoTONsByBackdropModel') ??
-    pickNum(row, 'floorPriceNanoTonsByCollection', 'floorPriceNanoTonsByBackdropModel');
-  const floorTon = floorNano != null ? nanoToTon(floorNano) : null;
+  const floorNanoCollection =
+    pickNum(row, 'floorPriceNanoTONsByCollection', 'floorPriceNanoTonsByCollection') ??
+    null;
+  const floorNanoBackdropModel =
+    pickNum(row, 'floorPriceNanoTONsByBackdropModel', 'floorPriceNanoTonsByBackdropModel') ??
+    null;
+
+  const floorCollectionTon =
+    floorNanoCollection != null ? Number(nanoToTon(floorNanoCollection)!.toFixed(4)) : null;
+  const floorBackdropTon =
+    floorNanoBackdropModel != null ? Number(nanoToTon(floorNanoBackdropModel)!.toFixed(4)) : null;
+  const floorForDiscount = floorCollectionTon ?? floorBackdropTon;
 
   const modelPm = pickNum(row, 'modelRarityPerMille', 'model_rarity_per_mille');
   const backdropPm = pickNum(row, 'backdropRarityPerMille', 'backdrop_rarity_per_mille');
@@ -226,7 +234,9 @@ export function mapMrktGiftToExternalListing(raw: Record<string, unknown>): Exte
     gift_symbol: giftSymbol || undefined,
     serial_number: number,
     price_ton: Number(priceTon.toFixed(4)),
-    floor_price: floorTon != null ? Number(floorTon.toFixed(4)) : null,
+    floor_price_collection: floorCollectionTon,
+    floor_price_backdrop_model: floorBackdropTon,
+    floor_price: floorForDiscount,
     seller_id: pickStrLoose(row, 'sellerId', 'seller_id').trim() || null,
     seller_name: pickStrLoose(row, 'sellerName', 'seller_name', 'sellerFullName').trim() || null,
     rarity_rank:

@@ -24,6 +24,8 @@ async function main() {
     gift_name: `${collection} #${serial}`,
     serial_number: serial,
     price_ton: Number(price.toFixed(2)),
+    floor_price_collection: Number(floor.toFixed(2)),
+    floor_price_backdrop_model: Number((floor * 1.06).toFixed(2)),
     floor_price: Number(floor.toFixed(2)),
     below_floor_percent: Number((((floor - price) / floor) * 100).toFixed(2)),
     rarity_rank: randomInt(1, 400),

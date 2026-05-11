@@ -10,7 +10,7 @@ import { formatGiftListingTelegramCard } from '../lib/format-gift-listing-card';
 import { BotService } from '../bot/bot.service';
 import { MetricsService } from '../metrics/metrics.service';
 import { TonUsdRateService } from '../pricing/ton-usd-rate.service';
-import { GiftTelegramLinkResolverService } from '../mrkt-link/gift-telegram-link-resolver.service';
+import { mrktPrimaryListingDisplayUrl } from '../lib/mrkt-telegram-link';
 
 @Injectable()
 export class AlertsService {
@@ -25,7 +25,6 @@ export class AlertsService {
     private readonly bot: BotService,
     private readonly metrics: MetricsService,
     private readonly tonUsdRateService: TonUsdRateService,
-    private readonly giftLinkResolver: GiftTelegramLinkResolverService,
     config: ConfigService,
   ) {
     this.dedupeTtl = config.get<number>('ALERT_DEDUPE_TTL_SEC') ?? 300;
@@ -36,7 +35,7 @@ export class AlertsService {
     if (event.event_type !== 'listing') return;
 
     const tonUsdRate = await this.tonUsdRateService.getEffectiveRate();
-    const giftLineUrl = this.giftLinkResolver.displayUrlForListing(event);
+    const showcaseUrl = mrktPrimaryListingDisplayUrl(event);
 
     const rows = await this.prisma.userFilter.findMany({
       where: { alertsEnabled: true },
@@ -52,7 +51,7 @@ export class AlertsService {
       const first = await this.redis.dedupeOnce(dedupeKey, this.dedupeTtl);
       if (!first) continue;
 
-      const text = this.formatListingAlert(event, sniperScore, tonUsdRate, giftLineUrl);
+      const text = this.formatListingAlert(event, sniperScore, tonUsdRate);
       const delay = row.user.tier === 'free' ? this.freeDelayMs : 0;
 
       const send = async () => {
@@ -77,7 +76,7 @@ export class AlertsService {
               try {
                 await this.bot.sendMessage(
                   row.user.telegramId,
-                  this.formatBeautifulAlert(event, giftLineUrl),
+                  this.formatBeautifulAlert(event, showcaseUrl),
                 );
                 this.metrics.recordAlert(Date.now() - t1, true);
                 await this.prisma.alertLog.create({
@@ -111,27 +110,22 @@ export class AlertsService {
     }
   }
 
-  private formatListingAlert(
-    e: NormalizedMarketEvent,
-    sniperScore: number,
-    tonUsdRate: number | null,
-    giftLineUrl: string | null,
-  ): string {
+  private formatListingAlert(e: NormalizedMarketEvent, sniperScore: number, tonUsdRate: number | null): string {
     const serialLine =
       e.beautiful_label != null && e.beautiful_label.length > 0
-        ? `\n\n✨ Serial pattern: ${e.beautiful_label}`
+        ? `\n\n✨ Паттерн серии: ${e.beautiful_label}`
         : '';
     const card = formatGiftListingTelegramCard(e, {
-      headline: '⚡ New listing',
+      headline: '✔️ ЛИСТИНГ',
       tonUsdRate,
       sniperScore,
-      giftLineUrl,
+      locale: 'ru',
     });
     return `${card}${serialLine}`;
   }
 
-  private formatBeautifulAlert(e: NormalizedMarketEvent, giftLineUrl: string | null): string {
-    const tail = giftLineUrl != null ? `\n\n${giftLineUrl}` : '';
+  private formatBeautifulAlert(e: NormalizedMarketEvent, showcaseUrl: string | null): string {
+    const tail = showcaseUrl != null ? `\n\n${showcaseUrl}` : '';
     return (
       `🔥 Beautiful serial\n\n` +
       `Gift series: ${e.collection?.trim() || 'n/a'}\n` +

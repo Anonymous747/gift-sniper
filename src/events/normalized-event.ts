@@ -27,6 +27,11 @@ export interface NormalizedMarketEvent {
   gift_symbol?: string | null;
   serial_number: number | null;
   price_ton: number | null;
+  /** Gift-series floor (MRKT `floorPriceNanoTONsByCollection`). */
+  floor_price_collection?: number | null;
+  /** Model+backdrop floor (MRKT `floorPriceNanoTONsByBackdropModel`). */
+  floor_price_backdrop_model?: number | null;
+  /** Baseline for discount % (collection floor, else model/backdrop floor). */
   floor_price: number | null;
   below_floor_percent: number | null;
   rarity_rank: number | null;

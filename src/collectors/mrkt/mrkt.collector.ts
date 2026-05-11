@@ -168,6 +168,8 @@ export class MrktCollector implements OnModuleInit, OnModuleDestroy {
         gift_name: `${collection} #${serial}`,
         serial_number: serial,
         price_ton: Number(price.toFixed(2)),
+        floor_price_collection: Number(floor.toFixed(2)),
+        floor_price_backdrop_model: Number((floor * 1.08).toFixed(2)),
         floor_price: Number(floor.toFixed(2)),
         seller_id: 'seller_mock',
         seller_name: 'mock_seller',
@@ -184,6 +186,8 @@ export class MrktCollector implements OnModuleInit, OnModuleDestroy {
     const floor = item.floor_price ?? null;
     const below =
       floor != null && floor > 0 ? Number((((floor - item.price_ton) / floor) * 100).toFixed(2)) : null;
+    const floorCollection = item.floor_price_collection ?? null;
+    const floorBackdropModel = item.floor_price_backdrop_model ?? null;
     const event_id = opts.stableEventId
       ? `mrkt:${item.gift_id}:${Math.round(item.price_ton * PRICE_SIG_MULT)}`
       : uuidv4();
@@ -216,6 +220,8 @@ export class MrktCollector implements OnModuleInit, OnModuleDestroy {
       gift_symbol: item.gift_symbol ?? null,
       serial_number: item.serial_number ?? null,
       price_ton: item.price_ton,
+      floor_price_collection: floorCollection,
+      floor_price_backdrop_model: floorBackdropModel,
       floor_price: floor,
       below_floor_percent: below,
       rarity_rank: item.rarity_rank ?? null,

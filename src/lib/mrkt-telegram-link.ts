@@ -132,23 +132,22 @@ export function listingTelegramStarGiftKey(event: NftLinkEvent): string {
 }
 
 /**
- * Primary 🏷 link for MRKT listings: prefer `https://t.me/nft/{Key}-{serial}` only when MRKT suffix parses
- * and **Key strictly matches this listing’s gift series key** (`collection_display` / `collection` / slug).
- *
- * Blocks bogus shorthand (`Neon-*` vs real series `Neon Sign`→`NeonSign`) that still appears in catalogs.
+ * `https://t.me/nft/…` only when MRKT suffix parses and gift key matches listing series
+ * (same rules as other MRKT-native clients; blocks bogus `Neon-*` vs `NeonSign-*`).
  */
-export function mrktPrimaryListingDisplayUrl(event: NftLinkEvent): string | null {
-  const mrkt = mrktTelegramGiftUrl(event as MrktLinkEvent);
-  if (event.market !== 'mrkt') return mrkt;
-
+export function mrktValidatedCollectibleNftUrl(event: NftLinkEvent): string | null {
+  if (event.market !== 'mrkt') return null;
   const seg = parseMrktNftTelegramPathSegment(event);
-  if (!seg) return mrkt;
-
+  if (!seg) return null;
   const suffixKey = telegramStarGiftKeyFromPathSegment(seg);
   const listingKey = listingTelegramStarGiftKey(event);
-  if (!suffixKey || !listingKey || suffixKey !== listingKey) return mrkt;
-
+  if (!suffixKey || !listingKey || suffixKey !== listingKey) return null;
   return `https://t.me/nft/${seg}`;
+}
+
+/** Single “best” showcase URL: validated NFT if any, else MRKT mini-app. */
+export function mrktPrimaryListingDisplayUrl(event: NftLinkEvent): string | null {
+  return mrktValidatedCollectibleNftUrl(event) ?? mrktTelegramGiftUrl(event as MrktLinkEvent);
 }
 
 /**
