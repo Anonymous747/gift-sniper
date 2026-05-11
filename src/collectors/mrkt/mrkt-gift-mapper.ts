@@ -65,6 +65,9 @@ export function mapMrktGiftToExternalListing(raw: Record<string, unknown>): Exte
     title ||
     (number != null ? `${collection} #${number}` : `${collection} · ${id.slice(0, 8)}`);
   const giftModel = pickStr(raw, 'modelName', 'model_name', 'ModelName') || null;
+  const giftBackdrop =
+    pickStr(raw, 'backdropName', 'backdrop_name', 'BackdropName', 'backgroundName', 'background_name') ||
+    null;
 
   const floorNano =
     pickNum(raw, 'floorPriceNanoTONsByCollection', 'floorPriceNanoTONsByBackdropModel') ??
@@ -93,6 +96,7 @@ export function mapMrktGiftToExternalListing(raw: Record<string, unknown>): Exte
     collection_display: pickStr(raw, 'collectionTitle', 'collection_title') || undefined,
     gift_name: giftName,
     gift_model: giftModel || undefined,
+    gift_backdrop: giftBackdrop || undefined,
     serial_number: number,
     price_ton: Number(priceTon.toFixed(4)),
     floor_price: floorTon != null ? Number(floorTon.toFixed(4)) : null,

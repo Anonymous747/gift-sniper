@@ -21,6 +21,8 @@ export interface NormalizedMarketEvent {
   gift_name: string;
   /** MRKT physical/visual model when collector provides it (e.g. Gold Bar). */
   gift_model?: string | null;
+  /** MRKT backdrop name when collector provides it (e.g. Grape). */
+  gift_backdrop?: string | null;
   serial_number: number | null;
   price_ton: number | null;
   floor_price: number | null;

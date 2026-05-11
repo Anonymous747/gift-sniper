@@ -142,6 +142,13 @@ class EnvironmentVariables {
   @IsOptional()
   @IsString()
   PUBLIC_APP_BASE_URL?: string;
+
+  /** Cache TTL (seconds) for fetched TON/USD spot. */
+  @IsOptional()
+  @IsInt()
+  @Min(60)
+  @Max(3600)
+  TON_USD_CACHE_SEC?: number;
 }
 
 export function validateEnv(config: Record<string, unknown>) {
@@ -179,6 +186,12 @@ export function validateEnv(config: Record<string, unknown>) {
     typeof normalized.MRKT_CATALOG_CACHE_MS === 'string'
   ) {
     normalized.MRKT_CATALOG_CACHE_MS = parseInt(normalized.MRKT_CATALOG_CACHE_MS as string, 10);
+  }
+  if (
+    normalized.TON_USD_CACHE_SEC !== undefined &&
+    typeof normalized.TON_USD_CACHE_SEC === 'string'
+  ) {
+    normalized.TON_USD_CACHE_SEC = parseInt(normalized.TON_USD_CACHE_SEC as string, 10);
   }
 
   const validated = plainToInstance(EnvironmentVariables, normalized, {

@@ -188,6 +188,7 @@ export class MrktCollector implements OnModuleInit, OnModuleDestroy {
       collection_display: item.collection_display,
       gift_name: item.gift_name,
       gift_model: item.gift_model ?? null,
+      gift_backdrop: item.gift_backdrop ?? null,
       serial_number: item.serial_number ?? null,
       price_ton: item.price_ton,
       floor_price: floor,

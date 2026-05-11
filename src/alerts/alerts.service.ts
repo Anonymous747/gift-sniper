@@ -7,8 +7,10 @@ import { FilterEngineService } from '../filters/filter-engine.service';
 import { parseCriteriaJson } from '../filters/filter-criteria';
 import type { NormalizedMarketEvent } from '../events/normalized-event';
 import { giftTelegramDisplayUrl } from '../lib/mrkt-telegram-link';
+import { formatGiftListingTelegramCard } from '../lib/format-gift-listing-card';
 import { BotService } from '../bot/bot.service';
 import { MetricsService } from '../metrics/metrics.service';
+import { TonUsdRateService } from '../pricing/ton-usd-rate.service';
 
 @Injectable()
 export class AlertsService {
@@ -22,6 +24,7 @@ export class AlertsService {
     private readonly filters: FilterEngineService,
     private readonly bot: BotService,
     private readonly metrics: MetricsService,
+    private readonly tonUsdRateService: TonUsdRateService,
     config: ConfigService,
   ) {
     this.dedupeTtl = config.get<number>('ALERT_DEDUPE_TTL_SEC') ?? 300;
@@ -30,6 +33,8 @@ export class AlertsService {
 
   async notifyMatchingUsers(event: NormalizedMarketEvent, sniperScore: number): Promise<void> {
     if (event.event_type !== 'listing') return;
+
+    const tonUsdRate = await this.tonUsdRateService.getEffectiveRate();
 
     const rows = await this.prisma.userFilter.findMany({
       where: { alertsEnabled: true },
@@ -45,7 +50,7 @@ export class AlertsService {
       const first = await this.redis.dedupeOnce(dedupeKey, this.dedupeTtl);
       if (!first) continue;
 
-      const text = this.formatListingAlert(event, sniperScore);
+      const text = this.formatListingAlert(event, sniperScore, tonUsdRate);
       const delay = row.user.tier === 'free' ? this.freeDelayMs : 0;
 
       const send = async () => {
@@ -101,28 +106,21 @@ export class AlertsService {
     }
   }
 
-  private formatListingAlert(e: NormalizedMarketEvent, sniperScore: number): string {
-    const discount = e.below_floor_percent != null ? `${e.below_floor_percent.toFixed(1)}% below floor` : 'n/a';
-    const rarity = e.rarity_rank != null ? `#${e.rarity_rank}` : 'n/a';
-    const giftLink = giftTelegramDisplayUrl(e);
-    const linkBlock = giftLink != null ? `${giftLink}\n\n` : '';
+  private formatListingAlert(
+    e: NormalizedMarketEvent,
+    sniperScore: number,
+    tonUsdRate: number | null,
+  ): string {
     const serialLine =
       e.beautiful_label != null && e.beautiful_label.length > 0
-        ? `Serial pattern: ${e.beautiful_label}\n`
+        ? `\n\n✨ Serial pattern: ${e.beautiful_label}`
         : '';
-    return (
-      `⚡ New Listing Detected\n\n` +
-      `Collection: ${e.collection}\n` +
-      `Gift: ${e.gift_name}\n` +
-      serialLine +
-      linkBlock +
-      `Price: ${e.price_ton ?? '?'} TON\n` +
-      `Floor: ${e.floor_price ?? '?'} TON\n\n` +
-      `Discount: ${discount}\n` +
-      `Market: ${e.market.toUpperCase()}\n\n` +
-      `Rarity Rank: ${rarity}\n` +
-      `Sniper Score: ${sniperScore.toFixed(2)}`
-    );
+    const card = formatGiftListingTelegramCard(e, {
+      headline: '⚡ New listing',
+      tonUsdRate,
+      sniperScore,
+    });
+    return `${card}\n\nCollection: ${e.collection}${serialLine}`;
   }
 
   private formatBeautifulAlert(e: NormalizedMarketEvent): string {
