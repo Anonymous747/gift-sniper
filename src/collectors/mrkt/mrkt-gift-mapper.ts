@@ -46,6 +46,35 @@ function pickTrait(o: Record<string, unknown>, ...keys: string[]): string | null
   return s.length > 0 ? s : null;
 }
 
+/** MRKT often nests traits under `model` / `backdrop` / `symbol` objects (see amrkt `Gift` schema). */
+function pickTraitFromParents(
+  row: Record<string, unknown>,
+  parentKeys: string[],
+  ...traitKeys: string[]
+): string | null {
+  for (const pk of parentKeys) {
+    const inner = asRecord(row[pk]);
+    if (!inner) continue;
+    const t = pickTrait(inner, ...traitKeys);
+    if (t) return t;
+  }
+  return null;
+}
+
+function pickFromNestedNumber(
+  row: Record<string, unknown>,
+  parentKeys: string[],
+  ...numKeys: string[]
+): number | null {
+  for (const pk of parentKeys) {
+    const inner = asRecord(row[pk]);
+    if (!inner) continue;
+    const n = pickNum(inner, ...numKeys);
+    if (n != null) return n;
+  }
+  return null;
+}
+
 function pickNum(o: Record<string, unknown>, ...keys: string[]): number | null {
   for (const k of keys) {
     const v = o[k];
@@ -105,47 +134,66 @@ export function mapMrktGiftToExternalListing(raw: Record<string, unknown>): Exte
     'stargift_slug',
   );
   const number = pickNum(row, 'number', 'Number');
-  const title = pickStr(row, 'title', 'Title', 'name', 'Name');
   const giftName =
-    title ||
+    pickStrLoose(row, 'title', 'Title').trim() ||
+    pickStrLoose(row, 'name', 'Name').trim() ||
     (number != null ? `${collection} #${number}` : `${collection} · ${id.slice(0, 8)}`);
+
+  /** Flat keys match amrkt `Gift` pydantic aliases (modelName, modelTitle, …). */
   const giftModel =
     pickTrait(
       row,
       'modelName',
       'model_name',
-      'ModelName',
-      'model',
-      'Model',
+      'modelTitle',
+      'model_title',
       'giftModel',
       'gift_model',
       'visualModel',
       'visual_model',
-    ) ?? null;
+      'model',
+      'Model',
+    ) ??
+    pickTraitFromParents(row, ['model', 'Model', 'giftModel', 'GiftModel'], 'modelName', 'modelTitle', 'title', 'name') ??
+    null;
+
   const giftBackdrop =
     pickTrait(
       row,
       'backdropName',
       'backdrop_name',
       'BackdropName',
-      'backdrop',
-      'Backdrop',
+      'backdropTitle',
+      'backdrop_title',
       'giftBackdrop',
       'gift_backdrop',
+      'backdrop',
+      'Backdrop',
       'backgroundName',
       'background_name',
-    ) ?? null;
+      'background',
+      'Background',
+    ) ??
+    pickTraitFromParents(row, ['backdrop', 'Backdrop', 'giftBackdrop', 'background', 'Background'], 'backdropName', 'backdropTitle', 'title', 'name') ??
+    null;
+
   const giftSymbol =
     pickTrait(
       row,
       'symbolName',
       'symbol_name',
       'SymbolName',
-      'symbol',
-      'Symbol',
+      'symbolTitle',
+      'symbol_title',
       'giftSymbol',
       'gift_symbol',
-    ) ?? null;
+      'symbol',
+      'Symbol',
+      'patternName',
+      'pattern_name',
+    ) ??
+    pickTraitFromParents(row, ['symbol', 'Symbol', 'giftSymbol', 'pattern', 'Pattern'], 'symbolName', 'symbolTitle', 'title', 'name') ??
+    null;
 
   const floorNano =
     pickNum(row, 'floorPriceNanoTONsByCollection', 'floorPriceNanoTONsByBackdropModel') ??
@@ -179,9 +227,20 @@ export function mapMrktGiftToExternalListing(raw: Record<string, unknown>): Exte
     serial_number: number,
     price_ton: Number(priceTon.toFixed(4)),
     floor_price: floorTon != null ? Number(floorTon.toFixed(4)) : null,
-    seller_id: null,
-    seller_name: null,
-    rarity_rank: null,
+    seller_id: pickStrLoose(row, 'sellerId', 'seller_id').trim() || null,
+    seller_name: pickStrLoose(row, 'sellerName', 'seller_name', 'sellerFullName').trim() || null,
+    rarity_rank:
+      pickNum(
+        row,
+        'rarityRank',
+        'rarity_rank',
+        'giftRarityRank',
+        'gift_rarity_rank',
+        'globalRarityRank',
+        'overallRank',
+        'overall_rank',
+      ) ??
+      pickFromNestedNumber(row, ['gift', 'Gift'], 'rarityRank', 'rarity_rank'),
     rarity_score: rarityScore,
   };
 }

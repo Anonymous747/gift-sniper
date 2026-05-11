@@ -6,11 +6,11 @@ import { RedisService } from '../redis/redis.service';
 import { FilterEngineService } from '../filters/filter-engine.service';
 import { parseCriteriaJson } from '../filters/filter-criteria';
 import type { NormalizedMarketEvent } from '../events/normalized-event';
-import { giftTelegramDisplayUrl } from '../lib/mrkt-telegram-link';
 import { formatGiftListingTelegramCard, giftSeriesFooterExtraLine } from '../lib/format-gift-listing-card';
 import { BotService } from '../bot/bot.service';
 import { MetricsService } from '../metrics/metrics.service';
 import { TonUsdRateService } from '../pricing/ton-usd-rate.service';
+import { GiftTelegramLinkResolverService } from '../mrkt-link/gift-telegram-link-resolver.service';
 
 @Injectable()
 export class AlertsService {
@@ -25,6 +25,7 @@ export class AlertsService {
     private readonly bot: BotService,
     private readonly metrics: MetricsService,
     private readonly tonUsdRateService: TonUsdRateService,
+    private readonly giftLinkResolver: GiftTelegramLinkResolverService,
     config: ConfigService,
   ) {
     this.dedupeTtl = config.get<number>('ALERT_DEDUPE_TTL_SEC') ?? 300;
@@ -35,6 +36,7 @@ export class AlertsService {
     if (event.event_type !== 'listing') return;
 
     const tonUsdRate = await this.tonUsdRateService.getEffectiveRate();
+    const giftLineUrl = await this.giftLinkResolver.displayUrlForListing(event);
 
     const rows = await this.prisma.userFilter.findMany({
       where: { alertsEnabled: true },
@@ -50,7 +52,7 @@ export class AlertsService {
       const first = await this.redis.dedupeOnce(dedupeKey, this.dedupeTtl);
       if (!first) continue;
 
-      const text = this.formatListingAlert(event, sniperScore, tonUsdRate);
+      const text = this.formatListingAlert(event, sniperScore, tonUsdRate, giftLineUrl);
       const delay = row.user.tier === 'free' ? this.freeDelayMs : 0;
 
       const send = async () => {
@@ -73,7 +75,10 @@ export class AlertsService {
             if (firstB) {
               const t1 = Date.now();
               try {
-                await this.bot.sendMessage(row.user.telegramId, this.formatBeautifulAlert(event));
+                await this.bot.sendMessage(
+                  row.user.telegramId,
+                  this.formatBeautifulAlert(event, giftLineUrl),
+                );
                 this.metrics.recordAlert(Date.now() - t1, true);
                 await this.prisma.alertLog.create({
                   data: {
@@ -110,6 +115,7 @@ export class AlertsService {
     e: NormalizedMarketEvent,
     sniperScore: number,
     tonUsdRate: number | null,
+    giftLineUrl: string | null,
   ): string {
     const serialLine =
       e.beautiful_label != null && e.beautiful_label.length > 0
@@ -119,15 +125,15 @@ export class AlertsService {
       headline: '⚡ New listing',
       tonUsdRate,
       sniperScore,
+      giftLineUrl,
     });
     const seriesExtra = giftSeriesFooterExtraLine(e);
     const seriesBlock = seriesExtra != null ? `\n\n${seriesExtra}` : '';
     return `${card}${seriesBlock}${serialLine}`;
   }
 
-  private formatBeautifulAlert(e: NormalizedMarketEvent): string {
-    const link = giftTelegramDisplayUrl(e);
-    const tail = link != null ? `\n\n${link}` : '';
+  private formatBeautifulAlert(e: NormalizedMarketEvent, giftLineUrl: string | null): string {
+    const tail = giftLineUrl != null ? `\n\n${giftLineUrl}` : '';
     const seriesExtra = giftSeriesFooterExtraLine(e);
     const seriesBlock = seriesExtra != null ? `\n${seriesExtra}` : '';
     return (

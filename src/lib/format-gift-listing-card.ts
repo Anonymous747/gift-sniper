@@ -7,6 +7,11 @@ export type FormatGiftListingCardOpts = {
   /** When set (positive finite), append ` (~$…)` to the TON price. */
   tonUsdRate?: number | null;
   sniperScore?: number | null;
+  /**
+   * Primary URL on the 🏷 line (catalog-validated `t.me/nft` or MRKT mini-app).
+   * When omitted, uses sync `giftTelegramDisplayUrl` (MRKT → mini-app only).
+   */
+  giftLineUrl?: string | null;
 };
 
 function tonDisplay(ton: number | null | undefined): string {
@@ -36,7 +41,7 @@ export function formatGiftListingTelegramCard(
   event: NormalizedMarketEvent,
   opts: FormatGiftListingCardOpts,
 ): string {
-  const link = giftTelegramDisplayUrl(event);
+  const link = opts.giftLineUrl ?? giftTelegramDisplayUrl(event);
   const giftLine = link != null ? `${event.gift_name} (${link})` : event.gift_name;
 
   const discount =

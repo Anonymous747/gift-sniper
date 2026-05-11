@@ -9,6 +9,7 @@ import { formatGiftListingTelegramCard, giftSeriesFooterExtraLine } from '../lib
 import { parseFeedRecipe, recipeMatchesListing, type FeedRecipe } from './feed-recipes';
 import type { ArbitrageOpportunity } from '../intelligence/arbitrage-engine.service';
 import { TonUsdRateService } from '../pricing/ton-usd-rate.service';
+import { GiftTelegramLinkResolverService } from '../mrkt-link/gift-telegram-link-resolver.service';
 
 type ChannelRow = {
   id: string;
@@ -30,6 +31,7 @@ export class IntelFeedsDispatcherService implements OnModuleInit {
     private readonly bot: BotService,
     private readonly config: ConfigService,
     private readonly tonUsdRateService: TonUsdRateService,
+    private readonly giftLinkResolver: GiftTelegramLinkResolverService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -92,6 +94,7 @@ export class IntelFeedsDispatcherService implements OnModuleInit {
   async dispatchListing(event: NormalizedMarketEvent, sniperScore: number): Promise<void> {
     if (!this.postingEnabled) return;
     const tonUsdRate = await this.tonUsdRateService.getEffectiveRate();
+    const giftLineUrl = await this.giftLinkResolver.displayUrlForListing(event);
     const channels = await this.prisma.intelFeedChannel.findMany({ where: { enabled: true } });
     const minDecimal = (ch: ChannelRow) =>
       ch.minSniperScore != null ? Number(ch.minSniperScore) : null;
@@ -100,7 +103,7 @@ export class IntelFeedsDispatcherService implements OnModuleInit {
       const recipe = parseFeedRecipe(ch.recipe);
       if (!recipe || recipe === 'arbitrage') continue;
       if (!recipeMatchesListing(recipe, event, sniperScore, minDecimal(ch))) continue;
-      await this.tryPostChannel(ch, event, sniperScore, recipe, tonUsdRate);
+      await this.tryPostChannel(ch, event, sniperScore, recipe, tonUsdRate, giftLineUrl);
     }
   }
 
@@ -140,13 +143,14 @@ export class IntelFeedsDispatcherService implements OnModuleInit {
     sniperScore: number,
     recipe: FeedRecipe,
     tonUsdRate: number | null,
+    giftLineUrl: string | null,
   ): Promise<void> {
     const exists = await this.prisma.channelPost.findUnique({
       where: { channelId_eventUuid: { channelId: ch.id, eventUuid: event.event_id } },
     });
     if (exists) return;
 
-    const body = this.formatListingPost(ch.title, event, sniperScore, recipe, tonUsdRate);
+    const body = this.formatListingPost(ch.title, event, sniperScore, recipe, tonUsdRate, giftLineUrl);
     const msgId = await this.bot.sendChannelPost(ch.telegramChatId, body);
     if (msgId == null) return;
 
@@ -171,12 +175,14 @@ export class IntelFeedsDispatcherService implements OnModuleInit {
     sniperScore: number,
     recipe: FeedRecipe,
     tonUsdRate: number | null,
+    giftLineUrl: string | null,
   ): string {
     const card = formatGiftListingTelegramCard(event, {
       headline: `⚡ ${feedTitle}`,
       subhead: `(${recipe})`,
       tonUsdRate,
       sniperScore,
+      giftLineUrl,
     });
     const seriesExtra = giftSeriesFooterExtraLine(event);
     const seriesBlock = seriesExtra != null ? `\n\n${seriesExtra}` : '';

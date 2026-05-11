@@ -54,6 +54,26 @@ function normalizeNftSlugRun(seg: string): string {
 }
 
 /**
+ * MRKT catalog `title` / `name` → Telegram Star Gift key (e.g. Chill Flame → ChillFlame).
+ * Used to validate `nftTelegramSuffix` keys against `/gifts/collections`.
+ */
+export function starGiftSlugKeyFromMrktTitle(title: string): string {
+  return title
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .flatMap((word) => word.split('-').filter(Boolean))
+    .map(normalizeNftSlugRun)
+    .join('');
+}
+
+/** Key segment before `-{serial}` in a normalized path like `ChillFlame-70357`. */
+export function telegramStarGiftKeyFromPathSegment(segment: string): string | null {
+  const m = segment.trim().match(/^(.+)-(\d+)$/);
+  return m?.[1] != null ? m[1] : null;
+}
+
+/**
  * Telegram collectible paths use PascalCase collection keys (`Obsidian-8926`), not MRKT lowercase (`obsidian-8926`).
  * Hyphenated slugs become concatenated runs: `lunar-snake` → `LunarSnake`.
  */
@@ -88,23 +108,43 @@ function parseNftTelegramSuffix(raw: string): string | null {
   return normalizeTelegramNftPathSegment(seg);
 }
 
-/**
- * Telegram collectible gift link (`https://t.me/nft/…`).
- *
- * Only when MRKT sends an explicit telegram suffix: Telegram’s canonical NFT path often
- * **does not** match `{slug}-{serial}` derived from `gift_id` (e.g. MRKT `neon-2681` vs
- * Fragment `NeonSign-2681`). Guessing from `gift_id` produces broken links, so we never do it.
- */
-export function telegramNftCollectibleUrl(event: NftLinkEvent): string | null {
-  if (event.market !== 'mrkt' || !event.gift_id?.trim()) return null;
-
+/** Parses MRKT telegram suffix → normalized `Key-serial`; does not validate key against Telegram. */
+export function parseMrktNftTelegramPathSegment(event: NftLinkEvent): string | null {
+  if (event.market !== 'mrkt') return null;
   const suffixRaw = event.nft_telegram_suffix?.trim();
   if (!suffixRaw) return null;
-
   const parsed = parseNftTelegramSuffix(suffixRaw);
   if (!parsed || !nftSuffixSerialMatchesSegment(parsed, event.serial_number)) return null;
+  return parsed;
+}
 
-  return `https://t.me/nft/${parsed}`;
+/**
+ * Telegram collectible gift link (`https://t.me/nft/…`) from MRKT suffix only (parsed).
+ */
+export function telegramNftCollectibleUrl(event: NftLinkEvent): string | null {
+  if (!event.gift_id?.trim()) return null;
+  const seg = parseMrktNftTelegramPathSegment(event);
+  return seg != null ? `https://t.me/nft/${seg}` : null;
+}
+
+/**
+ * Primary URL for MRKT listings: use `https://t.me/nft/{segment}` only when `{segment}`’s gift key is in
+ * `slugKeys` (from MRKT public catalog titles). Otherwise `https://t.me/mrkt/app…`.
+ */
+export function giftTelegramDisplayUrlForMrktListing(event: NftLinkEvent, slugKeys: Set<string>): string | null {
+  const mrkt = mrktTelegramGiftUrl(event as MrktLinkEvent);
+  if (event.market !== 'mrkt') return mrkt;
+
+  if (slugKeys.size === 0) return mrkt;
+
+  const seg = parseMrktNftTelegramPathSegment(event);
+  if (!seg) return mrkt;
+
+  const key = telegramStarGiftKeyFromPathSegment(seg);
+  if (key && slugKeys.has(key)) {
+    return `https://t.me/nft/${seg}`;
+  }
+  return mrkt;
 }
 
 /**
@@ -130,7 +170,14 @@ export function mrktTelegramGiftUrl(event: MrktLinkEvent): string | null {
   return `https://t.me/mrkt/app?startapp=${encodeURIComponent(startapp)}`;
 }
 
-/** Prefer authoritative Telegram collectible URL; otherwise MRKT mini-app (always valid for MRKT listings). */
+/**
+ * Sync URL without catalog fetch. For **MRKT** always returns the mini-app link so we never show a bogus
+ * `t.me/nft/…` from an unvalidated `nftTelegramSuffix`. Use `giftTelegramDisplayUrlForMrktListing` + catalog
+ * when you need real collectible links.
+ */
 export function giftTelegramDisplayUrl(event: NftLinkEvent): string | null {
+  if (event.market === 'mrkt') {
+    return mrktTelegramGiftUrl(event as MrktLinkEvent);
+  }
   return telegramNftCollectibleUrl(event) ?? mrktTelegramGiftUrl(event as MrktLinkEvent);
 }
