@@ -23,6 +23,8 @@ export interface NormalizedMarketEvent {
   gift_model?: string | null;
   /** MRKT backdrop name when collector provides it (e.g. Grape). */
   gift_backdrop?: string | null;
+  /** MRKT symbol name when collector provides it (e.g. Chili). */
+  gift_symbol?: string | null;
   serial_number: number | null;
   price_ton: number | null;
   floor_price: number | null;

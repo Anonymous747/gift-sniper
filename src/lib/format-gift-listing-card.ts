@@ -34,6 +34,8 @@ export function formatGiftListingTelegramCard(
   const rows: string[] = [];
   const model = event.gift_model?.trim();
   if (model) rows.push(`Model: ${model}`);
+  const symbol = event.gift_symbol?.trim();
+  if (symbol) rows.push(`Symbol: ${symbol}`);
   const backdrop = event.gift_backdrop?.trim();
   if (backdrop) rows.push(`Backdrop: ${backdrop}`);
 

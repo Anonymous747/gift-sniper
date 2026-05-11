@@ -7,6 +7,7 @@ export type ExternalListing = {
   gift_name: string;
   gift_model?: string | null;
   gift_backdrop?: string | null;
+  gift_symbol?: string | null;
   serial_number?: number | null;
   price_ton: number;
   floor_price?: number | null;
